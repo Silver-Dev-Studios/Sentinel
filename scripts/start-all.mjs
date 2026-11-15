@@ -19,6 +19,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -89,6 +90,15 @@ let botCrashCount = 0;
 function startBot() {
   if (!botEnabled) {
     console.log('[supervisor] bot disabled (SENTINEL_BOT_ENABLED=false or DISCORD_BOT_TOKEN missing)');
+    return;
+  }
+  const botEntry = join(root, 'apps/bot', 'dist/index.js');
+  if (!existsSync(botEntry)) {
+    console.error(
+      `[supervisor] bot entry missing: ${botEntry}. ` +
+        'The build command must compile the bot (npm run build:bot). ' +
+        'Disabling bot; API continues.',
+    );
     return;
   }
   if (botCrashCount >= MAX_BOT_RESTARTS) {

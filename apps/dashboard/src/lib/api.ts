@@ -9,6 +9,31 @@
  */
 
 const CSRF_COOKIE = 'sentinel_csrf';
+export const TOKEN_KEY = 'sentinel_token';
+
+export function getToken(): string {
+  try {
+    return window.localStorage.getItem(TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setToken(token: string): void {
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // ignore storage failures (private mode)
+  }
+}
+
+export function clearToken(): void {
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 function csrfToken(): string {
   const match = document.cookie
@@ -40,6 +65,8 @@ export async function request<T>(path: string, config: ApiConfig, init?: Request
     'Content-Type': 'application/json',
     ...(init?.headers as Record<string, string> | undefined),
   };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (isMutating) headers['x-csrf-token'] = csrfToken();
 
   const res = await fetch(`${config.baseUrl}${path}`, {

@@ -10,6 +10,14 @@ function hashIp(req: FastifyRequest): string | null {
   return sha256(ip).slice(0, 32);
 }
 
+function extractBearer(header: string | undefined): string | null {
+  if (header && header.startsWith('Bearer ')) {
+    const value = header.slice('Bearer '.length).trim();
+    return value || null;
+  }
+  return null;
+}
+
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   const prisma = app.prisma;
 
@@ -92,11 +100,15 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       ipHash: hashIp(req),
     });
 
-    return reply.redirect(`${app.config.dashboardUrl}/#/overview`);
+    // Hand the session token to the dashboard in the URL fragment. Fragments
+    // are never sent to servers or included in Referer, and the dashboard
+    // scrubs it from the address bar immediately after storing it. This works
+    // even when browsers block the cross-site session cookie.
+    return reply.redirect(`${app.config.dashboardUrl}/#/auth?token=${rule.token}`);
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
-    const token = req.cookies[SESSION_COOKIE];
+    const token = req.cookies[SESSION_COOKIE] ?? extractBearer(req.headers.authorization);
     if (token) {
       await prisma.session.deleteMany({ where: { tokenHash: sha256(token) } });
       await writeAudit(prisma, app.wsHub, {

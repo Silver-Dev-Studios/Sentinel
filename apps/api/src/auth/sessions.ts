@@ -24,11 +24,29 @@ export interface SessionUser extends User {
   session: Session;
 }
 
+/**
+ * Extracts the session token from the request.
+ *
+ * The dashboard is served from a different origin (GitHub Pages) than the API
+ * (Render), so browsers that block third-party cookies will not deliver the
+ * session cookie on cross-site fetches. The dashboard therefore also sends the
+ * token as `Authorization: Bearer <token>`, which works regardless of cookie
+ * policy.
+ */
+function extractToken(req: FastifyRequest): string | null {
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) {
+    const value = header.slice('Bearer '.length).trim();
+    if (value) return value;
+  }
+  return req.cookies[SESSION_COOKIE] ?? null;
+}
+
 export async function resolveAuth(
   prisma: PrismaClient,
   req: FastifyRequest,
 ): Promise<{ user: User; session: Session } | null> {
-  const token = req.cookies[SESSION_COOKIE];
+  const token = extractToken(req);
   if (!token) return null;
   const tokenHash = sha256(token);
   const session = await prisma.session.findUnique({

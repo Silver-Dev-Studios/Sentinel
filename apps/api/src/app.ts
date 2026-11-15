@@ -101,6 +101,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (!config.csrfEnabled) return;
     // Internal bot <> API traffic is authenticated by key, not session
     if (request.headers['x-sentinel-key'] === config.apiKey) return;
+    // Bearer-token auth is not cookie-based, so it is not CSRF-exposed: a
+    // cross-site attacker cannot read the token or make the browser attach it.
+    const authorization = request.headers.authorization;
+    if (authorization && authorization.startsWith('Bearer ')) return;
     const token = request.headers['x-csrf-token'] as string | undefined;
     if (!token || token.length < 32) {
       reply.code(403).send({ error: 'CSRF validation failed', code: 'CSRF_FAILED' });

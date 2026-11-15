@@ -9,8 +9,20 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
   app.get('/api/overview', async (req, reply) => {
     if (!req.auth) return reply.code(401).send({ error: 'Unauthenticated' });
     const user = req.auth.user;
+    // Guilds the user can access: the allowlisted server's owner, or any
+    // member we've actually observed in the server. `memberIds` is a cached
+    // convenience list that may be stale/partial (e.g. right after a bot
+    // start), so the server_members table is the source of truth for
+    // membership; the owner always has access.
     const guilds = await prisma.authorizedServer.findMany({ where: { active: true } });
-    const accessible = guilds.filter((g) => g.memberIds.includes(user.discordId) || g.ownerId === user.discordId);
+    const memberRows = await prisma.serverMember.findMany({
+      where: { userId: user.discordId },
+      select: { guildId: true },
+    });
+    const memberGuildIds = new Set(memberRows.map((m) => m.guildId));
+    const accessible = guilds.filter(
+      (g) => g.ownerId === user.discordId || memberGuildIds.has(g.id) || g.memberIds.includes(user.discordId),
+    );
 
     const servers = [];
     for (const guild of accessible) {

@@ -51,10 +51,13 @@ export async function verifyGuildAccess(
   req: FastifyRequest,
   ownerId?: string | null,
 ): Promise<void> {
+  // The guild owner always has access, even if the member-sync has not yet
+  // persisted a server_members row (new guild, bot startup, partial sync).
+  const isGuildOwner = ownerId === discordId;
   const member = await prisma.serverMember.findUnique({
     where: { guildId_userId: { guildId, userId: discordId } },
   });
-  if (!member) {
+  if (!member && !isGuildOwner) {
     throw new AuthError('You do not have access to this server', 403, 'GUILD_ACCESS_DENIED');
   }
   const [roles, assignments] = await Promise.all([
@@ -73,10 +76,14 @@ export async function verifyGuildAccess(
   const ctx: import('@sds-sentinel/permissions').PermissionContext = {
     guildId,
     userId: discordId,
-    discordRoleIds: member.discordRoles,
+    discordRoleIds: member?.discordRoles ?? [],
     assignedRoleKeys: assignments.map((a) => a.roleKey),
     roles: permissionContextRoles,
-    isGuildOwner: ownerId === discordId,
+    isGuildOwner,
+    // Discord administrators should never be locked out either. The bot
+    // resolves this from live Discord member state; the API can't fully
+    // replicate that without extra data, so it relies on the owner bypass
+    // and role membership (member row existing) for everyone else.
     isDiscordAdmin: false,
   };
   req.permissions = ctx;

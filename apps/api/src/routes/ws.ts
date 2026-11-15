@@ -41,16 +41,21 @@ export async function registerWebSocketRoutes(app: FastifyInstance): Promise<voi
       return;
     }
     const user = auth.user;
-    const guilds = new Set(
-      (await prisma.authorizedServer
-        .findMany({
-          where: { active: true },
-          select: { id: true, memberIds: true, ownerId: true },
-        }))
-        .filter((g) => g.memberIds.includes(user.discordId) || g.ownerId === user.discordId)
-        .map((g) => g.id),
+    const [allGuilds, memberRows] = await Promise.all([
+      prisma.authorizedServer.findMany({ where: { active: true }, select: { id: true, ownerId: true, memberIds: true } }),
+      prisma.serverMember.findMany({ where: { userId: user.discordId }, select: { guildId: true } }),
+    ]);
+    const memberGuildIds = new Set(memberRows.map((r) => r.guildId));
+    const guilds = allGuilds.filter(
+      (g) => g.ownerId === user.discordId || memberGuildIds.has(g.id) || g.memberIds.includes(user.discordId),
     );
-    hub.connect({ ws: socket, userId: user.discordId, guilds, isBot: false, isAlive: true });
+    hub.connect({
+      ws: socket,
+      userId: user.discordId,
+      guilds: new Set(guilds.map((g) => g.id)),
+      isBot: false,
+      isAlive: true,
+    });
     socket.send(
       JSON.stringify({ type: 'ready', botConnected: hub.botConnected, client: user.discordId }),
     );

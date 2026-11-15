@@ -144,8 +144,10 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
     const { user } = req.auth;
     // List servers the user belongs to that are allowlisted in Sentinel.
+    // Membership comes from the server_members table (authoritative), falling
+    // back to the cached memberIds list; the guild owner always has access.
     const guilds = await prisma.authorizedServer.findMany({
-      where: { active: true, memberIds: { has: user.discordId } },
+      where: { active: true },
     });
     const memberships = await prisma.serverMember.findMany({
       where: { guildId: { in: guilds.map((g) => g.id) }, userId: user.discordId },
@@ -161,7 +163,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         avatar: user.avatar,
       },
       servers: guilds
-        .filter((g) => memberGuildIds.size === 0 || memberGuildIds.has(g.id))
+        .filter((g) => g.ownerId === user.discordId || memberGuildIds.has(g.id) || g.memberIds.includes(user.discordId))
         .map((g) => ({
           id: g.id,
           name: g.name,

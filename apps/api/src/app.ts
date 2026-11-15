@@ -8,6 +8,7 @@ import type { AuthError } from './middleware/auth.js';
 import { loadConfig, type ApiConfig } from './config.js';
 import { createWsHub } from './ws/hub.js';
 import { BotNotifier } from './ws/bot.js';
+import { SESSION_COOKIE } from './auth/sessions.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerModerationRoutes } from './routes/moderation.js';
@@ -113,6 +114,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     // cross-site attacker cannot read the token or make the browser attach it.
     const authorization = request.headers.authorization;
     if (authorization && authorization.startsWith('Bearer ')) return;
+    // If the request carries no session cookie there are no ambient
+    // credentials to abuse — the caller must authenticate out-of-band (e.g.
+    // via the Bearer header); enforcing a header-only CSRF token then only
+    // locks out legitimate clients (the dashboard reads the CSRF cookie on its
+    // own origin, which is never the API's origin in the Pages->Render split).
+    if (!request.cookies[SESSION_COOKIE]) return;
     const token = request.headers['x-csrf-token'] as string | undefined;
     if (!token || token.length < 32) {
       reply.code(403).send({ error: 'CSRF validation failed', code: 'CSRF_FAILED' });

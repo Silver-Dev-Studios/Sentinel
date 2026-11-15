@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { createApi, setToken, clearToken, type Api } from './api';
+import { createApi, getToken, setToken, clearToken, type Api } from './api';
 import type { AuthUser } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -48,6 +48,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const refresh = useCallback(async () => {
+    // Without a stored token the dashboard has no way to authenticate state-
+    // changing requests (the API's cookie is cross-origin and CSRF cannot be
+    // satisfied), so treat this as logged out instead of half-authenticated via
+    // a stale cookie.
+    if (!getToken()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     try {
       const me = await api.get<AuthUser>('/api/auth/me');
       setUser(me);

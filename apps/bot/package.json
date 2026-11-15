@@ -1,0 +1,26 @@
+{
+  "name": "@sds-sentinel/bot",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sds-sentinel/bot-services": "*",
+    "@sds-sentinel/database": "*",
+    "@sds-sentinel/discord-services": "*",
+    "@sds-sentinel/permissions": "*",
+    "@sds-sentinel/shared": "*",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.6.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

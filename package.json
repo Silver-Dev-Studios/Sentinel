@@ -1,0 +1,43 @@
+{
+  "name": "sds-sentinel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal Discord server monitoring, moderation, security, and administration platform for Silver Dev Studios",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,bot -c blue,magenta \"npm run dev -w @sds-sentinel/api\" \"npm run dev -w @sds-sentinel/bot\"",
+    "dev:dashboard": "npm run dev -w @sds-sentinel/dashboard",
+    "build": "npm run build -w @sds-sentinel/shared -w @sds-sentinel/database -w @sds-sentinel/permissions -w @sds-sentinel/validation -w @sds-sentinel/discord-services -w @sds-sentinel/api -w @sds-sentinel/bot && npm run build -w @sds-sentinel/dashboard",
+    "start:api": "npm run start -w @sds-sentinel/api",
+    "start:bot": "npm run start -w @sds-sentinel/bot",
+    "start:dashboard": "npm run start -w @sds-sentinel/dashboard",
+    "db:generate": "npm run db:generate -w @sds-sentinel/database",
+    "db:push": "npm run db:push -w @sds-sentinel/database",
+    "db:migrate": "npm run db:migrate -w @sds-sentinel/database",
+    "db:seed": "npm run db:seed -w @sds-sentinel/database",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "npm@10.2.4",
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.21.5": true
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}

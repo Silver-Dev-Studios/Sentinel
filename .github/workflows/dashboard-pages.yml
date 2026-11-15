@@ -1,0 +1,57 @@
+name: Deploy Dashboard to GitHub Pages
+
+on:
+  push:
+    branches: [build-sentinel-platform]
+  workflow_dispatch:
+
+# Allow one in-progress deployment at a time, and never cancel the production one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ">=20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspace packages
+        run: npm run build:packages
+
+      - name: Build dashboard
+        env:
+          # Point the dashboard at the Render API. Override via a repository
+          # variable (Settings > Secrets and variables > Actions > Variables).
+          VITE_API_URL: ${{ vars.SENTINEL_API_URL || 'https://sentinel-9o85.onrender.com' }}
+          # GitHub Pages serves the repo under /Sentinel/.
+          VITE_BASE_PATH: ${{ vars.SENTINEL_BASE_PATH || '/Sentinel/' }}
+        run: npm run build -w @sds-sentinel/dashboard
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -30,12 +30,57 @@ const WEIGHTS: Record<string, number> = {
 };
 
 /**
+ * Short-TTL in-memory cache for security reports. The Assessment Center shows
+ * the report once per page view; Overview and Summary call it for every server
+ * on every load and would otherwise hammer the DB with the same queries plus a
+ * write per server. The cache only lives in this process, so concurrent Render
+ * API instances may each compute once — that is fine, it is idempotent.
+ */
+const REPORT_CACHE_TTL_MS = 15_000;
+const reportCache = new Map<string, SecurityReport>();
+const reportTimestamps = new Map<string, number>();
+
+function cachedReport(key: string): SecurityReport | null {
+  const at = reportTimestamps.get(key);
+  if (at === undefined) return null;
+  if (Date.now() - at > REPORT_CACHE_TTL_MS) {
+    reportTimestamps.delete(key);
+    reportCache.delete(key);
+    return null;
+  }
+  return reportCache.get(key) ?? null;
+}
+
+function storeReport(key: string, report: SecurityReport): SecurityReport {
+  reportCache.set(key, report);
+  reportTimestamps.set(key, Date.now());
+  return report;
+}
+
+/** Drop the cached report for a guild (after config changes) so the next read reflects them. */
+export function invalidateSecurityCache(guildId: string): void {
+  reportCache.delete(guildId);
+  reportTimestamps.delete(guildId);
+}
+
+/**
  * Compute the Security Strength percentage using weighted checks. This is a
  * configuration-coverage score: it must never be presented as an absolute
  * "you are safe" guarantee. The dashboard distinguishes coverage from actual
  * protection effectiveness.
+ *
+ * When `persist` is true (the Security Overview page) a historical assessment
+ * row is written. High-frequency callers (Overview/Summary lists) pass false
+ * and rely on the short TTL cache.
  */
-export async function computeSecurityReport(prisma: PrismaClient, guildId: string): Promise<SecurityReport> {
+export async function computeSecurityReport(
+  prisma: PrismaClient,
+  guildId: string,
+  persist = true,
+): Promise<SecurityReport> {
+  const cached = cachedReport(guildId);
+  if (cached) return cached;
+
   const [security, autoModRules, autoModSettings, assessment] = await Promise.all([
     prisma.securitySettings.findUnique({ where: { guildId } }),
     prisma.autoModRule.findMany({ where: { guildId } }),
@@ -113,28 +158,32 @@ export async function computeSecurityReport(prisma: PrismaClient, guildId: strin
     .filter((c) => !c.covered || c.score < 1)
     .map((c) => c.weakness ?? `Improve ${c.label} configuration`);
 
-  // Save the assessment for history
-  await prisma.securityAssessment.create({
-    data: {
-      guildId,
-      score,
-      breakdown: {
-        checks,
-        enabled,
-        disabled,
-        recommendations,
-      } as object,
-    },
-  });
+  // Record a historical assessment only when the caller asked for it
+  // (Security Overview). Overview/Summary lists pass false to avoid a write
+  // per page load; they still get the same weighted number from the cache.
+  if (persist) {
+    await prisma.securityAssessment.create({
+      data: {
+        guildId,
+        score,
+        breakdown: {
+          checks,
+          enabled,
+          disabled,
+          recommendations,
+        } as object,
+      },
+    });
+  }
 
-  return {
+  return storeReport(guildId, {
     score,
     checks,
     enabled,
     disabled,
     recommendations,
     assessedAt: new Date().toISOString(),
-  };
+  });
 }
 
 export type AutoModRuleKind =

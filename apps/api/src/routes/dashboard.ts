@@ -26,7 +26,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
 
     const servers = [];
     for (const guild of accessible) {
-      const [members, joins24, leaves24, cases24, alerts, recentActivity, online, config, unsupervised] = await Promise.all([
+      const [members, joins24, leaves24, cases24, alerts, recentActivity, config, unsupervised] = await Promise.all([
         prisma.serverMember.count({ where: { guildId: guild.id } }),
         prisma.activityEvent.count({
           where: { guildId: guild.id, type: 'member_join', createdAt: { gte: daysAgo(1) } },
@@ -37,9 +37,8 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         prisma.moderationCase.count({ where: { guildId: guild.id, createdAt: { gte: daysAgo(1) } } }),
         prisma.alert.count({ where: { guildId: guild.id, status: 'open' } }),
         prisma.activityEvent.findMany({ where: { guildId: guild.id }, orderBy: { createdAt: 'desc' }, take: 5 }),
-        prisma.serverMember.count({ where: { guildId: guild.id } }),
         prisma.serverConfiguration.findUnique({ where: { guildId: guild.id } }),
-        computeSecurityReport(prisma, guild.id).catch(() => null),
+        computeSecurityReport(prisma, guild.id, false).catch(() => null),
       ]);
 
       servers.push({
@@ -98,7 +97,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
       name: guild.name,
       icon: guild.icon,
       memberCount: members,
-      securityStrength: security ? await computeSecurityReport(prisma, guild.id).then((r) => r.score) : null,
+      securityStrength: security ? await computeSecurityReport(prisma, guild.id, false).then((r) => r.score) : null,
       counts: {
         roles,
         openTickets: tickets,

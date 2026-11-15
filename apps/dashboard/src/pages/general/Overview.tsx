@@ -6,17 +6,22 @@ import {
   Bot,
   Database,
   Layers,
+  RefreshCw,
   Server,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
+import { useServer } from '../../lib/server';
 import { Card, Empty, Loading, PageHeader, Pill, StatCard } from '../../components/ui';
-import type { HealthInfo, OverviewData } from '../../lib/types';
+import type { HealthInfo } from '../../lib/types';
 
 export function OverviewPage() {
   const { api } = useAuth();
-  const [data, setData] = useState<OverviewData | null>(null);
+  // Server list + per-server stats are already loaded once by ServerProvider
+  // (/api/overview). This page consumes that data instead of re-fetching it,
+  // so the landing page only needs the lightweight /api/health.
+  const { servers, loading: serversLoading, refresh: refreshServers } = useServer();
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [latencyMs, setLatencyMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -24,12 +29,8 @@ export function OverviewPage() {
   const load = useCallback(async () => {
     try {
       const t0 = performance.now();
-      const [overview, h] = await Promise.all([
-        api.get<OverviewData>('/api/overview'),
-        api.get<HealthInfo>('/api/health'),
-      ]);
+      const h = await api.get<HealthInfo>('/api/health');
       setLatencyMs(Math.round(performance.now() - t0));
-      setData(overview);
       setHealth(h);
       setError(null);
     } catch (err) {
@@ -43,6 +44,11 @@ export function OverviewPage() {
     return () => clearInterval(id);
   }, [load]);
 
+  const totalMembers = servers.reduce((a, s) => a + (s.stats.members ?? 0), 0);
+  const openAlerts = servers.reduce((a, s) => a + (s.stats.openAlerts ?? 0), 0);
+  const botConnected = health?.websocket.botConnected ?? false;
+  const operational = health?.status === 'operational';
+
   if (error) {
     return (
       <div>
@@ -51,38 +57,48 @@ export function OverviewPage() {
       </div>
     );
   }
-  if (!data || !health) return <Loading />;
+  if (serversLoading || !health) return <Loading />;
 
   return (
     <div>
       <PageHeader
         title="Overview"
         description="Global Sentinel status across all connected SDS servers."
-        actions={<Pill tone={health.status === 'operational' ? 'success' : 'warn'}>{health.status}</Pill>}
+        actions={
+        <div className="flex items-center gap-2">
+          <Pill tone={operational ? 'success' : 'warn'}>{health.status}</Pill>
+          <button
+            onClick={() => void refreshServers()}
+            className="flex items-center gap-1.5 rounded-lg border border-sentinel-border bg-sentinel-surface2 px-3 py-1.5 text-xs text-sentinel-muted transition hover:bg-sentinel-border/40"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </button>
+        </div>
+      }
       />
 
       {/* Global connection status */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Connected Servers"
-          value={data.global.connectedServers}
+          value={servers.length}
           icon={<Server className="h-5 w-5" />}
         />
         <StatCard
           label="Total Members"
-          value={data.global.totalMembers.toLocaleString()}
+          value={totalMembers.toLocaleString()}
           icon={<Users className="h-5 w-5" />}
         />
         <StatCard
           label="Open Alerts"
-          value={data.global.openAlerts}
+          value={openAlerts}
           icon={<AlertTriangle className="h-5 w-5" />}
         />
         <StatCard
           label="Bot Status"
           value={
-            <span className={data.global.botConnected ? 'text-emerald-400' : 'text-rose-400'}>
-              {data.global.botConnected ? 'Connected' : 'Offline'}
+            <span className={botConnected ? 'text-emerald-400' : 'text-rose-400'}>
+              {botConnected ? 'Connected' : 'Offline'}
             </span>
           }
           icon={<Bot className="h-5 w-5" />}
@@ -135,9 +151,9 @@ export function OverviewPage() {
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-sentinel-muted">
         Connected Servers
       </h3>
-      {data.servers.length === 0 ? <Empty>No servers available to your account.</Empty> : (
+      {servers.length === 0 ? <Empty>No servers available to your account.</Empty> : (
         <div className="grid gap-4 md:grid-cols-2">
-          {data.servers.map((server) => (
+          {servers.map((server) => (
             <Card key={server.id}>
               <Link to="/" className="flex items-start justify-between">
                 <div className="flex items-center gap-3">

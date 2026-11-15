@@ -9,6 +9,7 @@
 export * from './permission.js';
 export * from './action-source.js';
 export * from './snip.js';
+export * from './commands.js';
 
 /** Sentinel command notation: `+` prefix, `/` slash, `+/` both. */
 export type CommandInterface = 'prefix' | 'slash' | 'both';

@@ -61,8 +61,11 @@ export interface ApiConfig {
 export async function request<T>(path: string, config: ApiConfig, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const isMutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const body = init?.body;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // DELETE with no body must not send Content-Type: application/json —
+    // Fastify rejects a JSON content type with an empty body (400).
+    ...(isMutating && body ? { 'Content-Type': 'application/json' } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   };
   const token = getToken();

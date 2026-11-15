@@ -128,9 +128,9 @@ export const antiSpamConfigSchema = z.object({
 });
 
 export const securityUpdateSchema = z.object({
-  antiRaid: antiRaidConfigSchema.optional(),
-  antiNuke: antiNukeConfigSchema.optional(),
-  antiSpam: antiSpamConfigSchema.optional(),
+  antiRaid: antiRaidConfigSchema.partial().optional(),
+  antiNuke: antiNukeConfigSchema.partial().optional(),
+  antiSpam: antiSpamConfigSchema.partial().optional(),
   permissionScanEnabled: z.boolean().optional(),
   trustedAdminIds: z.array(snowflake).optional(),
 });

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { guildGuard, ensurePerm } from '../middleware/guards.js';
 import { writeAudit } from '../services/audit.js';
 import { recordActivity } from '../ws/hub.js';
-import { computeSecurityReport, DEFAULT_AUTOMOD_PRESETS } from '../services/security.js';
+import { computeSecurityReport, invalidateSecurityCache, DEFAULT_AUTOMOD_PRESETS } from '../services/security.js';
 import { securityUpdateSchema, lockdownActivateSchema, autoModRuleSchema } from '@sds-sentinel/validation';
 
 export async function registerSecurityRoutes(app: FastifyInstance): Promise<void> {
@@ -52,6 +52,7 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
       trustedAdminIds: body.trustedAdminIds ?? existing?.trustedAdminIds ?? [],
     };
     await prisma.securitySettings.upsert({ where: { guildId }, create: flat, update: flat });
+    invalidateSecurityCache(guildId);
     await writeAudit(prisma, app.wsHub, { guildId, action: 'security.update', category: 'security', actorId: req.auth.user.discordId, detail: body });
     await recordActivity(prisma, app.wsHub, { guildId, type: 'config_change', actorId: req.auth.user.discordId, message: 'Security settings updated' });
     return { ok: true };
@@ -93,6 +94,7 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
       },
     });
     await writeAudit(prisma, app.wsHub, { guildId, action: 'automod.rule.create', category: 'security', actorId: req.auth.user.discordId, resource: rule.id });
+    invalidateSecurityCache(guildId);
     return rule;
   });
 
@@ -103,6 +105,7 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
     const rule = await prisma.autoModRule.findFirst({ where: { id: ruleId, guildId } });
     if (!rule) return reply.code(404).send({ error: 'Rule not found' });
     await prisma.autoModRule.update({ where: { id: rule.id }, data: { ...body, config: body.config as object | undefined } });
+    invalidateSecurityCache(guildId);
     await writeAudit(prisma, app.wsHub, { guildId, action: 'automod.rule.update', category: 'security', actorId: req.auth.user.discordId, resource: rule.id });
     return { ok: true };
   });
@@ -111,6 +114,7 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
     ensurePerm(req, 'security.automod');
     const { guildId, ruleId } = req.params as { guildId: string; ruleId: string };
     await prisma.autoModRule.deleteMany({ where: { id: ruleId, guildId } });
+    invalidateSecurityCache(guildId);
     await writeAudit(prisma, app.wsHub, { guildId, action: 'automod.rule.delete', category: 'security', actorId: req.auth.user.discordId, resource: ruleId });
     return { ok: true };
   });
@@ -124,6 +128,7 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
       create: { guildId, ...body },
       update: body,
     });
+    invalidateSecurityCache(guildId);
     await writeAudit(prisma, app.wsHub, { guildId, action: 'automod.settings.update', category: 'security', actorId: req.auth.user.discordId, detail: body });
     return { ok: true };
   });

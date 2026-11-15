@@ -15,6 +15,11 @@ import {
   customCommandSchema,
   scheduledTaskSchema,
 } from '@sds-sentinel/validation';
+import { BUILTIN_COMMANDS, PERMISSION_LABELS } from '@sds-sentinel/shared';
+
+function firstDefined<T>(...values: T[]): T | undefined {
+  return values.find((v) => v !== undefined);
+}
 
 export async function registerManagerRoutes(app: FastifyInstance): Promise<void> {
   const prisma = app.prisma;
@@ -478,6 +483,22 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
     return { ok: true };
   });
 
+  app.get('/api/servers/:guildId/commands/reference', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    void prisma;
+    return {
+      rows: BUILTIN_COMMANDS.map((cmd) => ({
+        name: cmd.name,
+        iface: cmd.iface,
+        category: cmd.category,
+        description: cmd.description,
+        usage: cmd.usage,
+        options: cmd.options ?? [],
+        permission: cmd.permission,
+        permissionLabel: PERMISSION_LABELS[cmd.permission as keyof typeof PERMISSION_LABELS] ?? cmd.permission,
+      })),
+    };
+  });
+
   // === Custom Commands ========================================================
 
   app.get('/api/servers/:guildId/commands', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
@@ -609,20 +630,30 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/servers/:guildId/welcome', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
     ensurePerm(req, 'settings.manage');
     const guildId = (req.params as { guildId: string }).guildId;
-    const body = req.body as {
-      welcomeEnabled?: boolean;
-      welcomeChannelId?: string;
-      welcomeTemplate?: string;
-      welcomeEmbed?: object;
-      goodbyeEnabled?: boolean;
-      goodbyeChannelId?: string;
-      goodbyeTemplate?: string;
-      goodbyeEmbed?: object;
-    };
+    const body = req.body as Record<string, unknown>;
+    // Map display names to the model as in PATCH; reject unknown fields so a
+    // bad payload never 500s.
+    const welcomeEnabled = firstDefined(body.welcomeEnabled, body.enabled);
+    const welcomeChannelId = firstDefined(body.welcomeChannelId, body.channelId);
+    const welcomeTemplate = firstDefined(body.welcomeTemplate, body.message, body.template);
+    const welcomeEmbed = firstDefined(body.welcomeEmbed, body.embed);
+    const goodbyeEnabled = firstDefined(body.goodbyeEnabled, body.goodbyeEnabled);
+    const goodbyeChannelId = firstDefined(body.goodbyeChannelId, body.goodbyeChannelId);
+    const goodbyeTemplate = firstDefined(body.goodbyeTemplate, body.goodbyeTemplate);
+    const goodbyeEmbed = firstDefined(body.goodbyeEmbed, body.goodbyeEmbed);
+    const data: Record<string, unknown> = {};
+    if (welcomeEnabled !== undefined) data.welcomeEnabled = Boolean(welcomeEnabled);
+    if (welcomeChannelId !== undefined) data.welcomeChannelId = welcomeChannelId === '' ? null : String(welcomeChannelId);
+    if (welcomeTemplate !== undefined) data.welcomeTemplate = String(welcomeTemplate ?? '');
+    if (welcomeEmbed !== undefined) data.welcomeEmbed = welcomeEmbed as object;
+    if (goodbyeEnabled !== undefined) data.goodbyeEnabled = Boolean(goodbyeEnabled);
+    if (goodbyeChannelId !== undefined) data.goodbyeChannelId = goodbyeChannelId === '' ? null : String(goodbyeChannelId);
+    if (goodbyeTemplate !== undefined) data.goodbyeTemplate = String(goodbyeTemplate ?? '');
+    if (goodbyeEmbed !== undefined) data.goodbyeEmbed = goodbyeEmbed as object;
     await prisma.welcomeSettings.upsert({
       where: { guildId },
-      create: { guildId, ...body },
-      update: body,
+      create: { guildId, ...data },
+      update: data,
     });
     await writeAudit(prisma, app.wsHub, { guildId, action: 'welcome.upsert', category: 'management', actorId: req.auth.user.discordId });
     return { ok: true };
@@ -631,8 +662,32 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/servers/:guildId/welcome', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
     ensurePerm(req, 'settings.manage');
     const guildId = (req.params as { guildId: string }).guildId;
-    const body = req.body as { [K: string]: unknown };
-    await prisma.welcomeSettings.upsert({ where: { guildId }, create: { guildId, ...(body as object) }, update: body as object });
+    const body = req.body as Record<string, unknown>;
+    // The model uses `welcomeEnabled`/`welcomeChannelId`/... while UIs may send
+    // the shorter display names (`enabled`, `channelId`). Map both so a PATCH
+    // never fails validation with an unknown-argument 500.
+    const welcomeEnabled = firstDefined(body.welcomeEnabled, body.enabled);
+    const welcomeChannelId = firstDefined(body.welcomeChannelId, body.channelId);
+    const welcomeTemplate = firstDefined(body.welcomeTemplate, body.message, body.template);
+    const welcomeEmbed = firstDefined(body.welcomeEmbed, body.embed) as object | null | undefined;
+    const goodbyeEnabled = firstDefined(body.goodbyeEnabled, body.goodbyeEnabled);
+    const goodbyeChannelId = firstDefined(body.goodbyeChannelId, body.goodbyeChannelId);
+    const goodbyeTemplate = firstDefined(body.goodbyeTemplate, body.goodbyeTemplate);
+    const goodbyeEmbed = firstDefined(body.goodbyeEmbed, body.goodbyeEmbed) as object | null | undefined;
+    const data: Record<string, unknown> = {};
+    if (welcomeEnabled !== undefined) data.welcomeEnabled = Boolean(welcomeEnabled);
+    if (welcomeChannelId !== undefined) data.welcomeChannelId = welcomeChannelId === '' ? null : String(welcomeChannelId);
+    if (welcomeTemplate !== undefined) data.welcomeTemplate = String(welcomeTemplate);
+    if (welcomeEmbed !== undefined) data.welcomeEmbed = welcomeEmbed as object;
+    if (goodbyeEnabled !== undefined) data.goodbyeEnabled = Boolean(goodbyeEnabled);
+    if (goodbyeChannelId !== undefined) data.goodbyeChannelId = goodbyeChannelId === '' ? null : String(goodbyeChannelId);
+    if (goodbyeTemplate !== undefined) data.goodbyeTemplate = String(goodbyeTemplate);
+    if (goodbyeEmbed !== undefined) data.goodbyeEmbed = goodbyeEmbed as object;
+    await prisma.welcomeSettings.upsert({
+      where: { guildId },
+      create: { guildId, ...data },
+      update: data,
+    });
     return { ok: true };
   });
 

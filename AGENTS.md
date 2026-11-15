@@ -95,4 +95,24 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
   the user's guild set from the session + `authorized_servers` rows (never trusts headers). The internal
   bot uses `x-sentinel-key`. Unauthorized handshakes close with 4401.
 - **Dashboard loading**: routes are code-split via `lazy()` (named exports → `.then(m => ({default:
-  m.XPage}))`). Initial bundle is the shell + Login/Overview; other pages load on navigation.
+  m.XPage}))`). Initial bundle is the shell + Login/Overview; other pages load on navigation.- **Delete requests must not send `Content-Type: application/json` with an empty body**.
+  Fastify returns 400 `Body cannot be empty when content-type is set to 'application/json'`, which
+  broke every dashboard DELETE (automod rules, roles, custom commands, scheduled tasks, tickets).
+  `dashboard/src/lib/api.ts` now only sets the JSON content type for mutating requests that carry a body.
+- **Security PATCH accepts partial configs**: `securityUpdateSchema` uses `.partial()` on the nested
+  antiRaid/antiNuke/antiSpam objects so toggling a single switch (e.g. `{ antiRaid: { antiRaidEnabled: true } }`)
+  validates. The route still merges partial values into the existing flat row before upsert.
+- **Welcome POST/PATCH map display names**: the model fields are `welcomeEnabled`/`welcomeChannelId`/
+  `welcomeTemplate` (+ goodbye twins); UIs may send `enabled`/`channelId`/`message`. `routes/management.ts`
+  maps both via `firstDefined` so a save never 500s on unknown Prisma args.
+- **Security report caching**: `computeSecurityReport(prisma, guildId, persist)` keeps a 15s in-memory per-guild
+  cache (`services/security.ts`). Overview/Summary pass `persist=false` (no `securityAssessment` write per page
+  view); the Security Overview page persists. Mutation routes invalidate with `invalidateSecurityCache(guildId)`
+  so changes reflect immediately.
+- **Commands page**: built-in command catalog lives in `packages/shared/src/commands.ts` (`BUILTIN_COMMANDS`
+  with name/iface(+ `/` `both`)/category/permission/usage). The API serves it at
+  `GET /api/servers/:guildId/commands/reference` and the dashboard page `Commands` (route `/commands`) renders it;
+  custom commands remain at `/commands/custom`. To add a bot command, add it to the catalog AND the bot's
+  prefix/slash handlers.
+- **Overview no longer double-fetches /api/overview**: `ServerProvider` loads it once; the Overview page consumes
+  `useServer()` servers and only polls `/api/health`.

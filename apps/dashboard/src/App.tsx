@@ -25,6 +25,7 @@ const EventBuilderPage = lazy(() => import('./pages/management/EventBuilder').th
 const TicketSystemPage = lazy(() => import('./pages/management/TicketSystem').then((m) => ({ default: m.TicketSystemPage })));
 const GiveawaysPage = lazy(() => import('./pages/management/Giveaways').then((m) => ({ default: m.GiveawaysPage })));
 const CustomCommandsPage = lazy(() => import('./pages/management/CustomCommands').then((m) => ({ default: m.CustomCommandsPage })));
+const CommandsPage = lazy(() => import('./pages/management/Commands').then((m) => ({ default: m.CommandsPage })));
 const SchedulerPage = lazy(() => import('./pages/management/Scheduler').then((m) => ({ default: m.SchedulerPage })));
 const SecurityOverviewPage = lazy(() => import('./pages/security/SecurityOverview').then((m) => ({ default: m.SecurityOverviewPage })));
 const AutoRaidPage = lazy(() => import('./pages/security/AutoRaid').then((m) => ({ default: m.AutoRaidPage })));
@@ -79,7 +80,8 @@ function AppRoutes() {
             <Route path="/events" element={<EventBuilderPage />} />
             <Route path="/tickets" element={<TicketSystemPage />} />
             <Route path="/giveaways" element={<GiveawaysPage />} />
-            <Route path="/commands" element={<CustomCommandsPage />} />
+            <Route path="/commands" element={<CommandsPage />} />
+            <Route path="/commands/custom" element={<CustomCommandsPage />} />
             <Route path="/scheduler" element={<SchedulerPage />} />
             <Route path="/security" element={<SecurityOverviewPage />} />
             <Route path="/security/anti-raid" element={<AutoRaidPage />} />

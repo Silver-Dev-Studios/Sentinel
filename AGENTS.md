@@ -52,3 +52,24 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
 - `npm run typecheck` must be clean.
 - `npm run build` must produce `apps/dashboard/dist` and app `dist/` outputs.
 - API boots via `npm run start:api` after `npm run build`; `/api/health` reports real DB/bot state.
+
+## Deployment topology & auth (important)
+
+- Dashboard is a static SPA on **GitHub Pages** (`https://silver-dev-studios.github.io/Sentinel/`,
+  HashRouter); API + bot run on **one Render web service** (`https://sentinel-9o85.onrender.com`).
+  These are **different origins**, so the dashboard and API are cross-site.
+- `DASHBOARD_URL` on Render must be the Pages URL; the API normalizes trailing slashes and derives
+  the bare `scheme://host` origin from it for CORS.
+- **Auth uses a bearer token, not just cookies.** Browsers block the cross-site session cookie on
+  the Pages→Render `fetch`, so after Discord OAuth the callback redirects to
+  `${DASHBOARD_URL}/#/auth?token=<session-token>`; the dashboard stores the token (localStorage
+  `sentinel_token`), scrubs the fragment to `#/overview` (module-load, before HashRouter mounts), and
+  sends `Authorization: Bearer <token>` on every request. The API accepts the token from the
+  `Authorization` header or the `sentinel_session` cookie. Bearer requests are exempt from CSRF
+  (no ambient cookie to abuse). CORS must allow the `authorization` request header — `@fastify/cors`
+  reflects requested headers, verified via OPTIONS preflight.
+- The global auth guard must populate `request.auth` for `/api/auth/*` routes (optional auth);
+  do not hard-skip the whole prefix or `/api/auth/me` will always 401.
+- Local end-to-end auth check (no secrets printed): create a user+session in the local Postgres,
+  build the API, then `app.inject({ url:'/api/auth/me', headers:{ authorization:`Bearer ${token}` } })`
+  and expect 200; without the token expect 401. See git history `931e087`.

@@ -71,7 +71,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     global: true,
     max: config.rateLimitMax,
     timeWindow: '1 minute',
+    // The returned object is what @fastify/rate-limit throws. It must carry
+    // statusCode, otherwise the error handler below cannot tell this apart
+    // from an unexpected failure and reports a generic 500.
     errorResponseBuilder: (_req, context) => ({
+      statusCode: 429,
       error: 'Too many requests',
       code: 'RATE_LIMITED',
       retryAfter: context.after,
@@ -167,6 +171,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
     if (ferr.name === 'CorsError') {
       return reply.code(403).send({ error: 'Origin not allowed', code: 'CORS' });
+    }
+    // Rate limiting is a normal client condition, not an internal failure. The
+    // rate-limit plugin throws the plain object built above; without this
+    // branch the generic handler below rewrites it as a 500 and the dashboard
+    // renders "Internal server error" on every tab until the window resets.
+    if (ferr.statusCode === 429) {
+      const limit = error as { error?: string; code?: string; retryAfter?: string };
+      return reply.code(429).send({
+        error: limit.error ?? 'Too many requests',
+        code: limit.code ?? 'RATE_LIMITED',
+        retryAfter: limit.retryAfter,
+      });
     }
     // Route handlers call zod schemas directly with .parse(); surface those as
     // 400s so a bad payload never falls through to a generic 500.

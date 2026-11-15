@@ -14,11 +14,10 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     // convenience list that may be stale/partial (e.g. right after a bot
     // start), so the server_members table is the source of truth for
     // membership; the owner always has access.
-    const guilds = await prisma.authorizedServer.findMany({ where: { active: true } });
-    const memberRows = await prisma.serverMember.findMany({
-      where: { userId: user.discordId },
-      select: { guildId: true },
-    });
+    const guilds = await prisma.authorizedServer.findMany({ where: { active: true } }).catch(() => []);
+    const memberRows = await prisma.serverMember
+      .findMany({ where: { userId: user.discordId }, select: { guildId: true } })
+      .catch(() => []);
     const memberGuildIds = new Set(memberRows.map((m) => m.guildId));
     const accessible = guilds.filter(
       (g) => g.ownerId === user.discordId || memberGuildIds.has(g.id) || g.memberIds.includes(user.discordId),
@@ -26,18 +25,36 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
 
     const servers = [];
     for (const guild of accessible) {
+      // Keep the stats queries concurrent, but isolate failures so a slow or
+      // momentarily unavailable database degrades that server's numbers to
+      // defaults instead of failing the whole overview (which surfaced as
+      // "Internal server error" on every dashboard tab).
+      const safe = <T>(p: Promise<T>, fallback: T): Promise<T> =>
+        p.catch(() => fallback);
       const [members, joins24, leaves24, cases24, alerts, recentActivity, config, unsupervised] = await Promise.all([
-        prisma.serverMember.count({ where: { guildId: guild.id } }),
-        prisma.activityEvent.count({
-          where: { guildId: guild.id, type: 'member_join', createdAt: { gte: daysAgo(1) } },
-        }),
-        prisma.activityEvent.count({
-          where: { guildId: guild.id, type: 'member_leave', createdAt: { gte: daysAgo(1) } },
-        }),
-        prisma.moderationCase.count({ where: { guildId: guild.id, createdAt: { gte: daysAgo(1) } } }),
-        prisma.alert.count({ where: { guildId: guild.id, status: 'open' } }),
-        prisma.activityEvent.findMany({ where: { guildId: guild.id }, orderBy: { createdAt: 'desc' }, take: 5 }),
-        prisma.serverConfiguration.findUnique({ where: { guildId: guild.id } }),
+        safe(prisma.serverMember.count({ where: { guildId: guild.id } }), 0),
+        safe(
+          prisma.activityEvent.count({
+            where: { guildId: guild.id, type: 'member_join', createdAt: { gte: daysAgo(1) } },
+          }),
+          0,
+        ),
+        safe(
+          prisma.activityEvent.count({
+            where: { guildId: guild.id, type: 'member_leave', createdAt: { gte: daysAgo(1) } },
+          }),
+          0,
+        ),
+        safe(
+          prisma.moderationCase.count({ where: { guildId: guild.id, createdAt: { gte: daysAgo(1) } } }),
+          0,
+        ),
+        safe(prisma.alert.count({ where: { guildId: guild.id, status: 'open' } }), 0),
+        safe(
+          prisma.activityEvent.findMany({ where: { guildId: guild.id }, orderBy: { createdAt: 'desc' }, take: 5 }),
+          [],
+        ),
+        safe(prisma.serverConfiguration.findUnique({ where: { guildId: guild.id } }), null),
         computeSecurityReport(prisma, guild.id, false).catch(() => null),
       ]);
 

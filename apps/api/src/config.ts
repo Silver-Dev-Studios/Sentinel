@@ -46,8 +46,14 @@ function resolveCorsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS;
   const origins = raw && raw.trim() ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const dashboard = process.env.DASHBOARD_URL;
-  if (dashboard && !origins.includes(dashboard)) {
-    origins.unshift(dashboard);
+  if (dashboard) {
+    // The browser sends the bare origin (scheme+host), not the full dashboard
+    // URL (which may include a path like /Sentinel/). Derive both.
+    const base = dashboard.replace(/\/+$/, '').split('/').slice(0, 3).join('/');
+    const candidates = [base, dashboard.replace(/\/+$/, '')];
+    for (const c of candidates) {
+      if (c && !origins.includes(c)) origins.unshift(c);
+    }
   }
   if (process.env.NODE_ENV !== 'production') {
     origins.push('http://localhost:5173');
@@ -68,7 +74,10 @@ export function loadConfig(): ApiConfig {
     sessionSecret: process.env.SESSION_SECRET ?? required('SESSION_SECRET'),
     deprecatedSessionSecret: process.env.SESSION_SECRET_PREVIOUS || undefined,
     cookieSecure: bool('COOKIE_SECURE', isProduction),
-    cookieSameSite: (process.env.COOKIE_SAMESITE as ApiConfig['cookieSameSite']) || (isProduction ? 'lax' : 'lax'),
+    // The dashboard ships on a separate origin (GitHub Pages) in production,
+    // so cross-site cookie delivery requires SameSite=None + Secure. Local
+    // dev (same-origin SPA on Vite) stays Lax.
+    cookieSameSite: (process.env.COOKIE_SAMESITE as ApiConfig['cookieSameSite']) || (isProduction ? 'none' : 'lax'),
     sessionTtlDays: num('SESSION_TTL_DAYS', 14),
     csrfEnabled: bool('CSRF_ENABLED', true),
     csrfSecret: process.env.CSRF_SECRET ?? process.env.SESSION_SECRET ?? required('CSRF_SECRET'),

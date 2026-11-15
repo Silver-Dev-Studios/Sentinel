@@ -53,6 +53,15 @@ export function setSessionCookie(app: FastifyInstance, reply: FastifyReply, toke
     sameSite: app.config.cookieSameSite,
     expires: expiresAt,
   });
+  // CSRF double-submit: the dashboard reads this non-HttpOnly cookie and echoes
+  // it back in the x-csrf-token header for state-changing requests.
+  reply.setCookie(CSRF_COOKIE, crypto.randomBytes(32).toString('hex'), {
+    path: '/',
+    httpOnly: false,
+    secure: app.config.cookieSecure,
+    sameSite: app.config.cookieSameSite,
+    expires: expiresAt,
+  });
 }
 
 export function clearSessionCookie(app: FastifyInstance, reply: FastifyReply): void {

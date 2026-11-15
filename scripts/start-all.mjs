@@ -46,22 +46,39 @@ function makeSpawner(appDir, entry, envOverrides = {}) {
 const runApi = makeSpawner('apps/api', 'dist/server.js');
 
 /**
- * Apply pending Prisma migrations before opening the HTTP listener. The API
- * queries columns that only exist after the migrations run, so a stale
- * database would 500 on every request (Prisma P2022 "column does not exist").
- * `prisma migrate deploy` is additive and idempotent. We retry with bounded
- * backoff so a cold/hibernating database during boot is not fatal.
+ * Apply pending Prisma migrations without blocking API/bot startup.
+ *
+ * Prisma Migrate issues DDL, which is unreliable through a pooled (PgBouncer)
+ * connection such as Supabase's transaction pooler. When a `DIRECT_URL` is
+ * configured, migrations run against it; otherwise they fall back to
+ * `DATABASE_URL`. The run is time-boxed so a hung/blocked database can never
+ * keep the HTTP listener from coming up (Render kills deploys that never open
+ * a port). If the migration is still pending, the API starts anyway and its
+ * degraded/zero-defaults handling covers the missing columns.
  */
-const MIGRATE_RETRIES = 5;
+const MIGRATE_RETRIES = 3;
+const MIGRATE_TIMEOUT_MS = 45_000;
 
 function runPrismaMigrate() {
   return new Promise((resolve) => {
     const child = spawn('npx', ['prisma', 'migrate', 'deploy'], {
       cwd: join(root, 'packages/database'),
-      env: process.env,
-      stdio: ['inherit', 'inherit', 'inherit'],
+      env: { ...process.env, ...(process.env.DIRECT_URL ? { DATABASE_URL: process.env.DIRECT_URL } : {}) },
+      stdio: ['ignore', 'inherit', 'inherit'],
     });
-    child.on('exit', (code) => resolve(code ?? 1));
+    const timer = setTimeout(() => {
+      console.error('[supervisor] migration timed out; killing migrate process');
+      child.kill('SIGKILL');
+      resolve(1);
+    }, MIGRATE_TIMEOUT_MS);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code ?? 1);
+    });
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(1);
+    });
   });
 }
 
@@ -72,7 +89,7 @@ async function applyMigrations() {
   }
   for (let attempt = 1; attempt <= MIGRATE_RETRIES; attempt += 1) {
     if (attempt > 1) {
-      const delay = Math.min(5_000 * 2 ** (attempt - 2), 30_000);
+      const delay = Math.min(3_000 * 2 ** (attempt - 2), 10_000);
       console.log(`[supervisor] migration attempt ${attempt - 1} failed; retrying in ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -161,10 +178,11 @@ function startBot() {
   children.set('bot', child);
 }
 
-applyMigrations().then(() => {
-  startApi();
-  startBot();
-});
+// Start the HTTP listener and bot immediately; apply migrations in the
+// background so a slow/hung database can never block the port binding.
+applyMigrations();
+startApi();
+startBot();
 
 process.on('SIGINT', () => stopAll('SIGINT'));
 process.on('SIGTERM', () => stopAll('SIGTERM'));

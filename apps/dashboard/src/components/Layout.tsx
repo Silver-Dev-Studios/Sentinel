@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Menu, Shield, X } from 'lucide-react';
 import { NAV_SECTIONS } from '../nav';
 import { useAuth } from '../lib/auth';
 import { useServer } from '../lib/server';
+import { ErrorBoundary } from './ErrorBoundary';
 
 function Emblem({ size = 26 }: { size?: number }) {
   return (
@@ -67,6 +68,7 @@ function ServerSwitcher() {
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const initials = useMemo(() => {
     if (!user?.username) return '?';
@@ -174,7 +176,9 @@ export function Layout() {
         ) : null}
         <main className="min-w-0 flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl">
-            <Outlet />
+            <ErrorBoundary key={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

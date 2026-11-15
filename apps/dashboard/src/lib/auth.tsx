@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { createApi, getToken, setToken, clearToken, type Api } from './api';
 import type { AuthUser } from './types';
 
@@ -39,13 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const api = createApi({
-    baseUrl: API_BASE,
-    onUnauthorized: () => {
-      clearToken();
-      setUser(null);
-    },
-  });
+  // Must be referentially stable: every data hook keys its effects on `api`,
+  // so a fresh object per render re-fires each request on every render and
+  // floods the API until the rate limiter rejects everything.
+  const api = useMemo(
+    () =>
+      createApi({
+        baseUrl: API_BASE,
+        onUnauthorized: () => {
+          clearToken();
+          setUser(null);
+        },
+      }),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     // Without a stored token the dashboard has no way to authenticate state-
@@ -82,9 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, api, refresh, logout }}>{children}</AuthContext.Provider>
+  const value = useMemo<AuthState>(
+    () => ({ user, loading, api, refresh, logout }),
+    [user, loading, api, refresh, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

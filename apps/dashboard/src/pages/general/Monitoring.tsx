@@ -20,8 +20,10 @@ export function MonitoringPage() {
     if (!selectedGuildId) return;
     setLoading(true);
     void api
-      .get<{ events: ActivityEvent[] }>(`/api/servers/${selectedGuildId}/activity?limit=60`)
-      .then((r) => setEvents(r.events))
+      .get<{ rows?: ActivityEvent[]; events?: ActivityEvent[] }>(
+        `/api/servers/${selectedGuildId}/activity?limit=60`,
+      )
+      .then((r) => setEvents(r.rows ?? r.events ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [api, selectedGuildId]);

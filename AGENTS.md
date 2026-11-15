@@ -116,3 +116,24 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
   prefix/slash handlers.
 - **Overview no longer double-fetches /api/overview**: `ServerProvider` loads it once; the Overview page consumes
   `useServer()` servers and only polls `/api/health`.
+- **`api` from `useAuth()` must stay referentially stable**: `AuthProvider` builds it with
+  `useMemo(..., [])` and memoizes the context value. An inline `createApi()` re-created the client on
+  every provider render, so every `useEffect`/`useCallback` keyed on `api` re-fired, and `refresh`
+  calling `/api/auth/me` set a new `user` object which re-rendered the provider again — an endless
+  loop (~10 req/s) that tripped the 120 req/min limiter and made every tab fail.
+- **Rate-limit errors must keep `statusCode: 429`**: `@fastify/rate-limit`'s `errorResponseBuilder`
+  result is thrown as-is, so omitting `statusCode` made the global error handler treat throttling as
+  an unexpected failure and answer 500 `INTERNAL` — surfacing as "Internal server error" across the
+  whole dashboard instead of a retryable 429. `app.ts` now forwards it.
+- **`/api/health` is exempt from the rate limiter** (`config: { rateLimit: false }`) because it is
+  Render's health probe; throttling it would turn client traffic into service restarts. The DB probe
+  is cached ~3s.
+- **Every routed page is wrapped in an `ErrorBoundary`** (`components/ErrorBoundary.tsx`, mounted
+  around `<Outlet />` in `Layout.tsx`, remounted per pathname via `key`). React unmounts the whole
+  tree on an uncaught render error, so before this one broken page left every other route blank until
+  a hard reload — indistinguishable from a site-wide outage. Keep page components total: guard
+  possibly-undefined API fields (e.g. the activity feed returns `{ rows }`, not `{ events }`).
+- **Verifying the SPA without clicking through the UI**: run headless Chromium with `--remote-debugging-port`,
+  seed `localStorage.sentinel_token`, navigate each route with a cache-busting `?r=...#/route` (a bare
+  hash change will *not* remount a crashed tree), then read `#root.innerHTML.length` and collect
+  `Runtime.exceptionThrown`. A `0` length means the page crashed; anything else means it rendered.

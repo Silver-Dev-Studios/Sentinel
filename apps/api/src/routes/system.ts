@@ -25,7 +25,9 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
   // Public health probe used by Render and the diagnostics page.
   // Returns a superset shape so every dashboard widget (Overview strip and
   // Diagnostics page) reads real values instead of undefined.
-  app.get('/api/health', async (_req, reply) => {
+  // Exempt from the global rate limiter: this is the platform health check, and
+  // throttling it turns unrelated client traffic into a service restart.
+  app.get('/api/health', { config: { rateLimit: false } }, async (_req, reply) => {
     const started = Date.now();
     const db = await cachedDatabaseHealth();
     const ok = db.ok;

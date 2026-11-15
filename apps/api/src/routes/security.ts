@@ -167,7 +167,11 @@ export async function registerSecurityRoutes(app: FastifyInstance): Promise<void
       guildId,
       actorId: req.auth.user.discordId,
       type: 'lockdown_activate',
-      payload: { channels: body.channels ?? [], roleId: body.roleId, pingRoleId: body.pingRoleId },
+      payload: {
+        channels: body.channels ?? [],
+        roleId: body.roleId ?? null,
+        pingRoleId: body.pingRoleId ?? null,
+      },
     });
     await prisma.securitySettings.upsert({
       where: { guildId },

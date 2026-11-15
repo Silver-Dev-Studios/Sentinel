@@ -13,6 +13,7 @@ interface RoleRow {
   isOwnerRole: boolean;
   permissions: Array<{ permission: string; enabled: boolean }>;
   memberCount: number;
+  discordRoleId?: string | null;
 }
 
 export function ModerationRolesPage() {
@@ -83,7 +84,7 @@ export function ModerationRolesPage() {
     <div>
       <PageHeader
         title="Moderation Roles"
-        description="Application-level permission roles. These grant dashboard and bot permissions — they are not Discord roles."
+        description="Application-level permission roles. A matching Discord role is created automatically so the bot can assign members."
         actions={<Button onClick={startCreate}>Create role</Button>}
       />
 
@@ -105,7 +106,14 @@ export function ModerationRolesPage() {
                     {role.name} {role.isOwnerRole ? <Pill tone="accent">Owner</Pill> : null}
                   </div>
                   <div className="text-xs text-sentinel-muted">{role.description ?? 'No description'}</div>
-                  <div className="mt-1 text-xs text-sentinel-muted">{role.memberCount} assigned member(s)</div>
+                  <div className="mt-1 text-xs text-sentinel-muted">
+                    {role.memberCount} assigned member(s) ·{' '}
+                    {role.discordRoleId ? (
+                      <span className="text-emerald-400">Discord role <code className="text-[10px]">{role.discordRoleId}</code></span>
+                    ) : (
+                      <span className="text-amber-400">Discord role pending (bot will create it)</span>
+                    )}
+                  </div>
                 </div>
                 {!role.isOwnerRole ? (
                   <div className="flex gap-1.5">

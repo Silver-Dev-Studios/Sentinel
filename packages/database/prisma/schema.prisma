@@ -138,6 +138,13 @@ model ServerConfiguration {
   timezone              String  @default("UTC")
   snipeRetentionSeconds Int     @default(604800) // 7d in seconds
   snipeLogging          Boolean @default(true)
+  // Giveaway defaults: channel new giveaways are sent to unless overridden,
+  // and whether the giveaway announcement posts as an embed by default.
+  giveawayDefaultChannelId String?
+  giveawayDefaultEmbed   Boolean @default(true)
+  // Per-category log channel routing, e.g.
+  // { "messages": "111...", "moderation": null, "tickets": "...", "giveaways": "..." }
+  logChannels            Json?
   welcomeChannelId      String?
   welcomeEnabled        Boolean @default(false)
   welcomeTemplate       String  @default("")
@@ -319,6 +326,9 @@ model ModerationRole {
   name        String
   description String?
   isOwnerRole Boolean  @default(false)
+  // Discord role created on the guild for this Sentinel role (null until the
+  // bot has created/matched it).
+  discordRoleId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

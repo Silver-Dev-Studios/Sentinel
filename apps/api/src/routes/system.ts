@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { checkDatabaseHealth } from '@sds-sentinel/database';
 import { guildGuard, ensurePerm } from '../middleware/guards.js';
 import { writeAudit, queryAudit } from '../services/audit.js';
+import { logChannelsSchema } from '@sds-sentinel/validation';
 
 /**
  * Cache the database probe briefly. The Overview strip and Diagnostics page poll
@@ -107,15 +108,40 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/servers/:guildId/settings', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
     const guildId = (req.params as { guildId: string }).guildId;
-    const [config, inactivity, snipe] = await Promise.all([
+    const [config, inactivity] = await Promise.all([
       prisma.serverConfiguration.findUnique({ where: { guildId } }),
       prisma.inactivitySettings.findUnique({ where: { guildId } }),
-      undefined,
     ]);
     return {
       config: config ?? { guildId, prefix: '!', timezone: 'UTC', snipeRetentionSeconds: 1800, snipeLogging: true },
       inactivity: inactivity ?? { guildId, periodDays: 30, enabled: false },
-      snipe: snipe,
+      logChannels: (config?.logChannels as Record<string, string | null> | null) ?? {},
+    };
+  });
+
+  // Per-category log channel routing (message/moderation/ticket/giveaway/etc).
+  app.patch('/api/servers/:guildId/log-channels', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    ensurePerm(req, 'settings.manage');
+    const guildId = (req.params as { guildId: string }).guildId;
+    const body = logChannelsSchema.parse(req.body ?? {});
+    const current = await prisma.serverConfiguration.findUnique({ where: { guildId } });
+    const merged = { ...((current?.logChannels as Record<string, string | null> | null) ?? {}), ...body };
+    await prisma.serverConfiguration.upsert({
+      where: { guildId },
+      create: { guildId, logChannels: merged as object },
+      update: { logChannels: merged as object },
+    });
+    await writeAudit(prisma, app.wsHub, { guildId, action: 'settings.logChannels.update', category: 'system', actorId: req.auth.user.discordId, detail: body });
+    return { ok: true, logChannels: merged };
+  });
+
+  // Giveaway defaults (channel + embed default) for the Message-area pages.
+  app.get('/api/servers/:guildId/giveaway-settings', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    const guildId = (req.params as { guildId: string }).guildId;
+    const config = await prisma.serverConfiguration.findUnique({ where: { guildId } });
+    return {
+      defaultChannelId: config?.giveawayDefaultChannelId ?? null,
+      defaultEmbed: config?.giveawayDefaultEmbed ?? true,
     };
   });
 

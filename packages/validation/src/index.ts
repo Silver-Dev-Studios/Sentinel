@@ -137,8 +137,10 @@ export const securityUpdateSchema = z.object({
 
 export const lockdownActivateSchema = z.object({
   channels: z.array(snowflake).optional(),
-  roleId: snowflake.optional(),
-  pingRoleId: snowflake.optional(),
+  // Role ids are optional; the dashboard sends `{ roleId: null }` to indicate
+  // "no role", so accept null and coerce to undefined.
+  roleId: snowflake.nullable().optional(),
+  pingRoleId: snowflake.nullable().optional(),
 });
 
 export const autoModRuleSchema = z.object({
@@ -225,14 +227,22 @@ export const eventCreateSchema = z.object({
 
 export const ticketPanelSchema = z.object({
   name: z.string().trim().min(2).max(64),
-  category: z.string().trim().min(2).max(64),
+  category: z.string().trim().min(2).max(64).optional(),
   description: z.string().trim().max(512).optional(),
   emoji: z.string().max(8).optional(),
   channelId: snowflake.optional(),
   openingMessage: z.string().trim().max(2000).optional(),
   questions: z.array(z.string().max(256)).max(10).optional(),
   staffRoleIds: z.array(snowflake).optional(),
+  // Embed/button configuration for the panel message.
+  embedTitle: z.string().trim().max(256).optional(),
+  embedDescription: z.string().max(4096).optional(),
+  embedColor: z.number().int().min(0).max(16777215).optional(),
+  buttonLabel: z.string().trim().min(1).max(80).optional(),
+  buttonStyle: z.enum(['primary', 'secondary', 'success', 'danger']).optional(),
 });
+
+const ticketPanelUpdateSchema = ticketPanelSchema.partial();
 
 export const ticketCloseSchema = z.object({
   reason: optionalReasonSchema,
@@ -241,13 +251,35 @@ export const ticketCloseSchema = z.object({
 
 // Giveaways ------------------------------------------------------------------
 
-export const giveawayCreateSchema = z.object({
-  channelId: snowflake,
-  prize: z.string().trim().min(1).max(256),
-  description: z.string().trim().max(1024).optional(),
-  winnerCount: z.number().int().min(1).max(100),
-  durationMinutes: z.number().int().min(1).max(10080),
-  requirements: z.record(z.unknown()).optional(),
+export const giveawayCreateSchema = z
+  .object({
+    // Channel is optional — when omitted the server's configured default
+    // giveaway channel is used (see ServerConfiguration.giveawayDefaultChannelId).
+    channelId: snowflake.optional(),
+    prize: z.string().trim().min(1).max(256),
+    description: z.string().trim().max(1024).optional(),
+    winnerCount: z.number().int().min(1).max(100).default(1),
+    // Either durationMinutes (end = now + duration) or endsAt (explicit ISO
+    // timestamp) must be provided.
+    durationMinutes: z.number().int().min(1).max(10080).optional(),
+    endsAt: z.string().datetime({ offset: true }).optional(),
+    requirements: z.record(z.unknown()).optional(),
+    useEmbed: z.boolean().optional(),
+  })
+  .refine((g) => g.durationMinutes || g.endsAt, {
+    message: 'Giveaway requires durationMinutes or endsAt',
+    path: ['durationMinutes'],
+  });
+
+// Per-category log channel routing settings.
+export const logChannelsSchema = z.object({
+  messages: snowflake.nullable().optional(),
+  moderation: snowflake.nullable().optional(),
+  tickets: snowflake.nullable().optional(),
+  giveaways: snowflake.nullable().optional(),
+  modmail: snowflake.nullable().optional(),
+  security: snowflake.nullable().optional(),
+  events: snowflake.nullable().optional(),
 });
 
 // Custom commands ------------------------------------------------------------

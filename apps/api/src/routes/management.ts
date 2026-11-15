@@ -280,7 +280,21 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
       },
     });
     await prisma.botCommand.create({
-      data: { guildId, actorId: req.auth.user.discordId, type: 'update_event', payload: { eventId: existing.id, name: event.name } as object },
+      data: {
+        guildId,
+        actorId: req.auth.user.discordId,
+        type: 'update_event',
+        payload: {
+          eventId: existing.id,
+          discordEventId: event.discordEventId,
+          name: event.name,
+          description: event.description,
+          startsAt: event.startsAt.toISOString(),
+          endsAt: event.endsAt?.toISOString() ?? null,
+          channelId: event.channelId,
+          image: event.image,
+        } as object,
+      },
     });
     await writeAudit(prisma, app.wsHub, { guildId, action: 'events.update', category: 'management', actorId: req.auth.user.discordId, resource: event.id });
     return event;
@@ -381,7 +395,7 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
       data: {
         guildId,
         name: body.name,
-        category: body.category,
+        category: body.category ?? 'general',
         description: body.description ?? null,
         emoji: body.emoji ?? null,
         channelId: body.channelId ?? null,
@@ -394,9 +408,77 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
       guildId,
       actorId: req.auth.user.discordId,
       type: 'create_ticket_panel',
-      payload: { panelId: panel.id, name: panel.name, description: panel.description, emoji: panel.emoji, channelId: panel.channelId },
+      payload: {
+        panelId: panel.id,
+        name: panel.name,
+        category: panel.category,
+        description: panel.description,
+        emoji: panel.emoji,
+        channelId: panel.channelId,
+        openingMessage: panel.openingMessage,
+        questions: panel.questions,
+        staffRoleIds: panel.staffRoleIds,
+        embedTitle: body.embedTitle,
+        embedDescription: body.embedDescription,
+        embedColor: body.embedColor,
+        buttonLabel: body.buttonLabel ?? 'Open a ticket',
+        buttonStyle: body.buttonStyle ?? 'primary',
+      },
     });
     await writeAudit(prisma, app.wsHub, { guildId, action: 'tickets.panel.create', category: 'management', actorId: req.auth.user.discordId, resource: panel.id });
+    return { ...panel, commandId };
+  });
+
+  app.patch('/api/servers/:guildId/tickets/panels/:panelId', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    ensurePerm(req, 'tickets.manage');
+    const { guildId, panelId } = req.params as { guildId: string; panelId: string };
+    const panel = await prisma.ticketPanel.findFirst({ where: { id: panelId, guildId } });
+    if (!panel) return reply.code(404).send({ error: 'Panel not found' });
+    const body = ticketPanelSchema.partial().parse(req.body);
+    if (body.name !== undefined) panel.name = body.name;
+    if (body.category !== undefined) panel.category = body.category || 'general';
+    if (body.description !== undefined) panel.description = body.description ?? null;
+    if (body.emoji !== undefined) panel.emoji = body.emoji ?? null;
+    if (body.channelId !== undefined) panel.channelId = body.channelId ?? null;
+    if (body.openingMessage !== undefined) panel.openingMessage = body.openingMessage ?? null;
+    if (body.questions !== undefined) panel.questions = body.questions ?? [];
+    if (body.staffRoleIds !== undefined) panel.staffRoleIds = body.staffRoleIds ?? [];
+    await prisma.ticketPanel.update({
+      where: { id: panel.id },
+      data: {
+        name: panel.name,
+        category: panel.category,
+        description: panel.description,
+        emoji: panel.emoji,
+        channelId: panel.channelId,
+        openingMessage: panel.openingMessage,
+        questions: (panel.questions ?? []) as Prisma.InputJsonValue,
+        staffRoleIds: panel.staffRoleIds,
+      },
+    });
+    // Re-enqueue when the panel message should be refreshed.
+    const { id: commandId } = await app.botNotifier.enqueue({
+      guildId,
+      actorId: req.auth.user.discordId,
+      type: 'create_ticket_panel',
+      payload: {
+        panelId: panel.id,
+        name: panel.name,
+        category: panel.category,
+        description: panel.description,
+        emoji: panel.emoji,
+        channelId: panel.channelId,
+        openingMessage: panel.openingMessage,
+        questions: panel.questions,
+        staffRoleIds: panel.staffRoleIds,
+        embedTitle: body.embedTitle,
+        embedDescription: body.embedDescription,
+        embedColor: body.embedColor,
+        buttonLabel: body.buttonLabel ?? 'Open a ticket',
+        buttonStyle: body.buttonStyle ?? 'primary',
+      },
+    });
+    await writeAudit(prisma, app.wsHub, { guildId, action: 'tickets.panel.update', category: 'management', actorId: req.auth.user.discordId, resource: panel.id });
     return { ...panel, commandId };
   });
 
@@ -425,15 +507,36 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
     ensurePerm(req, 'giveaways.manage');
     const guildId = (req.params as { guildId: string }).guildId;
     const body = giveawayCreateSchema.parse(req.body);
-    const endsAt = new Date(Date.now() + body.durationMinutes * 60_000);
+    // Resolve the target channel: explicit request wins, otherwise fall back to
+    // the server-configured default giveaway channel, then to the first synced
+    // text channel so giveaways never hard-fail for a missing default.
+    const config = await prisma.serverConfiguration.findUnique({ where: { guildId } });
+    let channelId = body.channelId ?? config?.giveawayDefaultChannelId ?? null;
+    if (!channelId) {
+      const fallback = await prisma.serverChannel.findFirst({
+        where: { guildId, type: { in: [0, 5, 15] } },
+        orderBy: [{ position: 'asc' }, { name: 'asc' }],
+      });
+      channelId = fallback?.channelId ?? null;
+    }
+    if (!channelId) {
+      return reply.code(400).send({ error: 'No giveaway channel selected and none available. Configure a default giveaway channel first.', code: 'NO_CHANNEL' });
+    }
+    const endsAt = body.endsAt ? new Date(body.endsAt) : new Date(Date.now() + (body.durationMinutes ?? 24 * 60) * 60_000);
+    if (Number.isNaN(endsAt.getTime())) {
+      return reply.code(400).send({ error: 'Invalid endsAt', code: 'INVALID_DATE' });
+    }
+    // Default to the server's embed preference when the dashboard doesn't pick.
+    const useEmbed = body.useEmbed ?? config?.giveawayDefaultEmbed ?? true;
     const giveaway = await prisma.giveaway.create({
       data: {
         guildId,
-        channelId: body.channelId,
+        channelId,
         prize: body.prize,
         description: body.description ?? null,
         winnerCount: body.winnerCount,
-        durationSeconds: body.durationMinutes * 60,
+        durationSeconds: Math.max(1, Math.round((endsAt.getTime() - Date.now()) / 1000)),
+        startsAt: new Date(),
         endsAt,
         requirements: body.requirements as object | undefined,
       },
@@ -442,10 +545,48 @@ export async function registerManagerRoutes(app: FastifyInstance): Promise<void>
       guildId,
       actorId: req.auth.user.discordId,
       type: 'create_giveaway',
-      payload: { giveawayId: giveaway.id, channelId: giveaway.channelId, prize: giveaway.prize, winnerCount: giveaway.winnerCount, endsAt: giveaway.endsAt.toISOString() },
+      payload: {
+        giveawayId: giveaway.id,
+        channelId: giveaway.channelId,
+        prize: giveaway.prize,
+        description: giveaway.description ?? undefined,
+        winnerCount: giveaway.winnerCount,
+        endsAt: giveaway.endsAt.toISOString(),
+        useEmbed,
+      },
     });
     await writeAudit(prisma, app.wsHub, { guildId, action: 'giveaways.create', category: 'management', actorId: req.auth.user.discordId, resource: giveaway.id });
     return { ...giveaway, commandId };
+  });
+
+  // Giveaway configuration defaults (channel + embed default).
+  app.get('/api/servers/:guildId/giveaways/settings', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    const guildId = (req.params as { guildId: string }).guildId;
+    const config = await prisma.serverConfiguration.findUnique({ where: { guildId } });
+    return {
+      defaultChannelId: config?.giveawayDefaultChannelId ?? null,
+      defaultEmbed: config?.giveawayDefaultEmbed ?? true,
+    };
+  });
+
+  app.patch('/api/servers/:guildId/giveaways/settings', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
+    ensurePerm(req, 'giveaways.manage');
+    const guildId = (req.params as { guildId: string }).guildId;
+    const body = (req.body ?? {}) as { defaultChannelId?: string | null; defaultEmbed?: boolean };
+    await prisma.serverConfiguration.upsert({
+      where: { guildId },
+      create: {
+        guildId,
+        ...(body.defaultChannelId !== undefined ? { giveawayDefaultChannelId: body.defaultChannelId } : {}),
+        ...(body.defaultEmbed !== undefined ? { giveawayDefaultEmbed: Boolean(body.defaultEmbed) } : {}),
+      },
+      update: {
+        ...(body.defaultChannelId !== undefined ? { giveawayDefaultChannelId: body.defaultChannelId } : {}),
+        ...(body.defaultEmbed !== undefined ? { giveawayDefaultEmbed: Boolean(body.defaultEmbed) } : {}),
+      },
+    });
+    await writeAudit(prisma, app.wsHub, { guildId, action: 'giveaways.settings.update', category: 'management', actorId: req.auth.user.discordId, detail: body });
+    return { ok: true };
   });
 
   app.post('/api/servers/:guildId/giveaways/:giveawayId/end', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {

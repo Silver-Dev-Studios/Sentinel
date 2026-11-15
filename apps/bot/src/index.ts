@@ -94,7 +94,7 @@ async function main(): Promise<void> {
 
   attachListeners(client, prisma, api, snipe, prefixCommands, slashCommands);
 
-  const queueProcessor = new QueueProcessor(prisma, transport, messages, api);
+  const queueProcessor = new QueueProcessor(prisma, transport, messages, api, client);
   queueProcessor.start();
 
   const scheduler = new BotScheduler(prisma, messages, api);

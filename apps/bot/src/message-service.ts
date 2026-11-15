@@ -96,4 +96,26 @@ export class BotMessageService {
     const event = await guild.scheduledEvents.fetch(payload.eventId);
     await event.setStatus(GuildScheduledEventStatus.Canceled);
   }
+
+  async updateEvent(payload: {
+    guildId: string;
+    eventId: string;
+    name?: string;
+    description?: string | null;
+    scheduledStartTime?: string;
+    scheduledEndTime?: string | null;
+    channelId?: string | null;
+    entityType?: string | null;
+    image?: string | null;
+  }): Promise<void> {
+    const guild = await this.client.guilds.fetch(payload.guildId);
+    const event = await guild.scheduledEvents.fetch(payload.eventId);
+    const patch: Parameters<typeof event.edit>[0] = {};
+    if (payload.name !== undefined) patch.name = payload.name;
+    if (payload.description !== undefined) patch.description = payload.description ?? '';
+    if (payload.scheduledStartTime) patch.scheduledStartTime = new Date(payload.scheduledStartTime);
+    if (payload.scheduledEndTime) patch.scheduledEndTime = new Date(payload.scheduledEndTime);
+    if (payload.image !== undefined) patch.image = payload.image ?? undefined;
+    await event.edit(patch);
+  }
 }

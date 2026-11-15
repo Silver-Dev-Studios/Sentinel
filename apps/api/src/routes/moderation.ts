@@ -36,6 +36,19 @@ export async function registerModerationRoutes(app: FastifyInstance): Promise<vo
       }),
     ]);
 
+    // Fallback for an exact snowflake search: the bot may not have synced this
+    // member yet (fresh join, cache gap, muted server). Return a lightweight
+    // placeholder so Quick Actions can still target them by ID; moderation
+    // commands resolve the Discord user by ID anyway.
+    if (rows.length === 0 && q.search && /^[0-9]{15,25}$/.test(q.search.trim())) {
+      return {
+        total: 1,
+        page: Math.max(Number(q.page ?? 1), 1),
+        pageSize,
+        rows: [{ guildId, userId: q.search.trim(), username: `user-${q.search.trim().slice(-4)}`, displayName: null, isBot: false }],
+      };
+    }
+
     return { total, page: Math.max(Number(q.page ?? 1), 1), pageSize, rows };
   });
 
@@ -48,7 +61,15 @@ export async function registerModerationRoutes(app: FastifyInstance): Promise<vo
       prisma.memberRoleAssignment.findMany({ where: { guildId, userId } }),
     ]);
     if (!member) {
-      return reply.code(404).send({ error: 'Member not found', code: 'NOT_FOUND' });
+      // The bot hasn't synced this member yet; still allow viewing/acting by ID.
+      const placeholder = { guildId, userId, username: `user-${userId.slice(-4)}`, displayName: null, isBot: false };
+      const roles = await prisma.moderationRole.findMany({ where: { guildId, key: { in: assignments.map((a) => a.roleKey) } as never } });
+      return {
+        member: placeholder,
+        warnings: warnings.map((w) => ({ id: w.id, reason: w.reason, createdAt: w.createdAt })),
+        cases,
+        sentinelRoles: roles.map((r) => ({ key: r.key, name: r.name })),
+      };
     }
     const roles = await prisma.moderationRole.findMany({ where: { guildId, key: { in: assignments.map((a) => a.roleKey) } as never } });
     return {
@@ -236,6 +257,7 @@ export async function registerModerationRoutes(app: FastifyInstance): Promise<vo
       name: role.name,
       description: role.description,
       isOwnerRole: role.isOwnerRole,
+      discordRoleId: role.discordRoleId,
       permissions: role.permissions.map((p) => ({ permission: p.permission, enabled: p.enabled })),
       memberCount: assignments.filter((a) => a.roleKey === role.key).length,
     }));
@@ -261,6 +283,16 @@ export async function registerModerationRoutes(app: FastifyInstance): Promise<vo
     });
     await audit(prisma, app, guildId, 'roles.create', { actorId: req.auth.user.discordId, resource: role.id, detail: { name: role.name } });
     await recordActivity(prisma, app.wsHub, { guildId, type: 'config_change', actorId: req.auth.user.discordId, message: `Created Sentinel role ${name}` });
+    // Have the bot create a matching Discord role on the guild so the Sentinel
+    // role can be used for channel/moderation assignment.
+    await prisma.botCommand.create({
+      data: {
+        guildId,
+        actorId: req.auth.user.discordId,
+        type: 'create_role',
+        payload: { roleId: role.id, name, description: body.description ?? null, key } as object,
+      },
+    });
     return role;
   });
 
@@ -316,15 +348,37 @@ export async function registerModerationRoutes(app: FastifyInstance): Promise<vo
       update: { assignedById: req.auth.user.discordId },
     });
     await audit(prisma, app, guildId, 'roles.assign', { actorId: req.auth.user.discordId, targetId: userId, resource: roleKey });
+    // Mirror the assignment onto Discord when the bot has a Discord role for it.
+    if (role.discordRoleId) {
+      await prisma.botCommand.create({
+        data: {
+          guildId,
+          actorId: req.auth.user.discordId,
+          type: 'assign_role',
+          payload: { roleId: role.id, roleKey, userId, discordRoleId: role.discordRoleId } as object,
+        },
+      });
+    }
     return { ok: true };
   });
 
   app.post('/api/servers/:guildId/roles/:roleKey/remove', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
     ensurePerm(req, 'roles.manage');
     const { guildId, roleKey } = req.params as { guildId: string; roleKey: string };
+    const role = await prisma.moderationRole.findFirst({ where: { guildId, key: roleKey } });
     const { userId } = req.body as { userId: string };
     if (!userId) return reply.code(400).send({ error: 'userId is required' });
     await prisma.memberRoleAssignment.deleteMany({ where: { guildId, userId, roleKey } });
+    if (role?.discordRoleId) {
+      await prisma.botCommand.create({
+        data: {
+          guildId,
+          actorId: req.auth.user.discordId,
+          type: 'remove_role',
+          payload: { roleKey, userId, discordRoleId: role.discordRoleId } as object,
+        },
+      });
+    }
     await audit(prisma, app, guildId, 'roles.remove', { actorId: req.auth.user.discordId, targetId: userId, resource: roleKey });
     return { ok: true };
   });

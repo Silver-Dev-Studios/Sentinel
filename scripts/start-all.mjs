@@ -45,6 +45,46 @@ function makeSpawner(appDir, entry, envOverrides = {}) {
 
 const runApi = makeSpawner('apps/api', 'dist/server.js');
 
+/**
+ * Apply pending Prisma migrations before opening the HTTP listener. The API
+ * queries columns that only exist after the migrations run, so a stale
+ * database would 500 on every request (Prisma P2022 "column does not exist").
+ * `prisma migrate deploy` is additive and idempotent. We retry with bounded
+ * backoff so a cold/hibernating database during boot is not fatal.
+ */
+const MIGRATE_RETRIES = 5;
+
+function runPrismaMigrate() {
+  return new Promise((resolve) => {
+    const child = spawn('npx', ['prisma', 'migrate', 'deploy'], {
+      cwd: join(root, 'packages/database'),
+      env: process.env,
+      stdio: ['inherit', 'inherit', 'inherit'],
+    });
+    child.on('exit', (code) => resolve(code ?? 1));
+  });
+}
+
+async function applyMigrations() {
+  if (process.env.SENTINEL_SKIP_MIGRATIONS === 'true') {
+    console.log('[supervisor] migrations skipped (SENTINEL_SKIP_MIGRATIONS=true)');
+    return;
+  }
+  for (let attempt = 1; attempt <= MIGRATE_RETRIES; attempt += 1) {
+    if (attempt > 1) {
+      const delay = Math.min(5_000 * 2 ** (attempt - 2), 30_000);
+      console.log(`[supervisor] migration attempt ${attempt - 1} failed; retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    const code = await runPrismaMigrate();
+    if (code === 0) {
+      console.log('[supervisor] database migrations applied');
+      return;
+    }
+  }
+  console.error('[supervisor] database migrations failed after retries; continuing without them');
+}
+
 // The bot talks to the API over its own HTTP port inside the same container.
 // Prefer localhost over the public URL: fewer moving parts, no public roundtrip.
 function resolveBotApiUrl() {
@@ -121,8 +161,10 @@ function startBot() {
   children.set('bot', child);
 }
 
-startApi();
-startBot();
+applyMigrations().then(() => {
+  startApi();
+  startBot();
+});
 
 process.on('SIGINT', () => stopAll('SIGINT'));
 process.on('SIGTERM', () => stopAll('SIGTERM'));

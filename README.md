@@ -14,7 +14,7 @@ Sentinel is exclusively intended for Discord servers owned and operated by Silve
 
 | Component | Path | Description |
 | --- | --- | --- |
-| Discord Bot | `apps/bot` | Discord Gateway listener: moderation, automation, security monitoring, scheduler, bridge to the API. Runs as a **background worker**. |
+| Discord Bot | `apps/bot` | Discord Gateway listener: moderation, automation, security monitoring, scheduler, bridge to the API. Supervised alongside the API by `scripts/start-all.mjs`. |
 | Web Dashboard | `apps/dashboard` | React + TypeScript + Vite + Tailwind admin console. |
 | Backend API | `apps/api` | Fastify REST + WebSocket API: auth, permissions, data management, real-time events. |
 | Shared packages | `packages/*` | `shared`, `database`, `permissions`, `validation`, `discord-services`, `bot-services`. |
@@ -118,6 +118,7 @@ All credentials are supplied through environment variables — never hard-code o
 | `npm run build` | Build all workspaces (shared, database, permissions, validation, discord-services, api, bot, dashboard). |
 | `npm run start:api` | Start the built API. |
 | `npm run start:bot` | Start the built bot. |
+| `npm run start:all` | Supervised API + bot (Render web service start). |
 | `npm run typecheck` | Typecheck every workspace. |
 | `npm run db:generate` | Regenerate the Prisma client. |
 | `npm run db:push` | Push the Prisma schema to the database (dev). |
@@ -217,22 +218,29 @@ The schema lives in `packages/database/prisma/schema.prisma`. Server-scoped tabl
 `MessageDeliveryLog`, `ScheduledMessage`, `DiscordEvent`, `Ticket`, `Giveaway`, `AuditLog`,
 `Alert`, `AnalyticsRecord`, `CustomCommand`, `ScheduledTask`, `ConfigBackup`, and `DiagnosticLog`.
 
-## Deployment (Render)
+## Deployment
 
-See [`render.yaml`](./render.yaml) for the blueprint.
+See [`render.yaml`](./render.yaml) for the blueprint and
+[`docs/deployment.md`](./docs/deployment.md) for full notes.
+
+One Render web service hosts both the API and the Discord bot via
+`scripts/start-all.mjs` (`npm run start:all`): the API owns the HTTP port, the
+bot runs as a supervised child with restart-on-crash backoff. The dashboard is
+a static SPA hosted on GitHub Pages and points at the Render API.
 
 - **PostgreSQL** — managed Render Postgres (`sentinel-postgres`).
-- **API (web service)** — `start:api`; health check on `/api/health`; env from `apps/api/.env.example`.
-- **Dashboard (static site)** — built bundle from `apps/dashboard/dist`.
-- **Bot (background worker)** — `start:bot`. The bot must remain a background worker; do not replace it
-  with a web service or HTTP keep-alive workaround.
+- **API + Bot (web service)** — `start:all`; health check on `/api/health`.
+- **Dashboard (GitHub Pages)** — built with `VITE_API_URL` (Render API) and
+  `VITE_BASE_PATH` (repo subpath); hash routing needs no rewrites.
 
 Before first deploy:
 
 1. Create a Discord application, enable the bot, and add it to each SDS guild.
-2. Fill the `sync: false` secrets in the Render dashboard per service.
+2. Fill the `sync: false` secrets in the Render dashboard for the API service.
 3. Run migrations: attach a one-off shell or use a deploy hook to run
    `npm run db:deploy -w @sds-sentinel/database` against the managed database.
+4. Publish the dashboard to GitHub Pages and configure `DASHBOARD_URL`,
+   `CORS_ORIGINS`, and `COOKIE_SAMESITE=none` on the API service.
 
 ## Documentation
 

@@ -78,8 +78,17 @@ export function createApi(config: ApiConfig) {
 
 export type Api = ReturnType<typeof createApi>;
 
-/** Build a WS URL for live activity on the current origin/api base. */
-export function wsUrl(_baseUrl: string, guildId?: string): string {
+/**
+ * Build a WS URL for live activity.
+ *
+ * Prefers the configured API base (VITE_API_URL) so a dashboard hosted on a
+ * different origin than the API — e.g. GitHub Pages + Render — connects to the
+ * API's WebSocket endpoint. Falls back to the current origin for local dev.
+ */
+export function wsUrl(baseUrl: string, guildId?: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws?guild=${guildId ?? ''}`;
+  const host = baseUrl
+    ? new URL(baseUrl).host
+    : window.location.host;
+  return `${proto}://${host}/ws?guild=${guildId ?? ''}`;
 }

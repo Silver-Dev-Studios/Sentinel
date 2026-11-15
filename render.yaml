@@ -1,12 +1,17 @@
-# Render Blueprint — SDS Sentinel
+# Render Blueprint — SDS Sentinel (single web service)
 #
 # Services:
 #   1. sentinel-postgres  : managed PostgreSQL
-#   2. sentinel-api       : web service (REST + WebSockets)
-#   3. sentinel-dashboard : static site (built React bundle)
-#   4. sentinel-bot       : background worker (runs the Discord gateway listener)
+#   2. sentinel-api       : web service hosting BOTH the REST/WebSocket API and
+#                           the Discord bot process via scripts/start-all.mjs
 #
-# The bot MUST run as a background worker. Do not convert it to a web service.
+# The dashboard is a static site (Vite build) hosted separately on GitHub Pages,
+# configured at build time with VITE_API_URL pointing at this web service.
+#
+# Deployment constraint: the user is limited to a single Render web service,
+# so the bot runs as a supervised child process inside sentinel-api instead of
+# a separate background worker. The supervisor restarts the bot on crash and
+# exits (triggering a platform restart) if the API process dies.
 # Secrets are supplied via the Render dashboard at deploy time.
 
 services:
@@ -21,7 +26,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci && npm run db:generate && npm run build:api
-    startCommand: npm run start:api
+    startCommand: npm run start:all
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -34,10 +39,8 @@ services:
           type: web
           property: url
       - key: DASHBOARD_URL
-        fromService:
-          name: sentinel-dashboard
-          type: web
-          property: url
+        sync: false
+        # https://<username>.github.io/<repo>/ — set in the Render dashboard.
       - key: REDIRECT_URI
         fromService:
           name: sentinel-api
@@ -58,58 +61,23 @@ services:
         sync: false
       - key: SENTINEL_API_KEY
         sync: false
-      - key: COOKIE_SECURE
-        value: "true"
-      - key: CSRF_ENABLED
-        value: "true"
-      - key: TRUST_PROXY
-        value: "true"
-      - key: CORS_ORIGINS
-        fromService:
-          name: sentinel-dashboard
-          type: web
-          property: url
-      - key: SENTINEL_LOG_LEVEL
-        value: info
-
-  - type: web
-    name: sentinel-dashboard
-    runtime: static
-    buildCommand: npm ci && npm run build:packages && npm run build -w @sds-sentinel/dashboard
-    staticPublishPath: apps/dashboard/dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          name: sentinel-api
-          type: web
-          property: url
-
-  - type: worker
-    name: sentinel-bot
-    runtime: node
-    plan: free
-    buildCommand: npm ci && npm run db:generate && npm run build:bot
-    startCommand: npm run start:bot
-    envVars:
       - key: DISCORD_BOT_TOKEN
         sync: false
       - key: SENTINEL_GUILD_ALLOWLIST
         sync: false
       - key: SENTINEL_PREFIX
         value: "!"
-      - key: SENTINEL_API_URL
-        fromService:
-          name: sentinel-api
-          type: web
-          property: url
-      - key: SENTINEL_API_KEY
-        fromService:
-          name: sentinel-api
-          type: web
-          envVarKey: SENTINEL_API_KEY
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sentinel-postgres
-          property: connectionString
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: "none"
+      - key: CSRF_ENABLED
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: CORS_ORIGINS
+        sync: false
+        # Comma-separated GitHub Pages origin(s), e.g.
+        # https://silver-dev-studios.github.io,https://silver-dev-studios.github.io/Sentinel
       - key: SENTINEL_LOG_LEVEL
         value: info

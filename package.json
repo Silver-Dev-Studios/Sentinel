@@ -16,6 +16,7 @@
     "build:bot": "npm run build:packages && npm run build -w @sds-sentinel/bot",
     "start:api": "npm run start -w @sds-sentinel/api",
     "start:bot": "npm run start -w @sds-sentinel/bot",
+    "start:all": "node scripts/start-all.mjs",
     "start:dashboard": "npm run start -w @sds-sentinel/dashboard",
     "db:generate": "npm run db:generate -w @sds-sentinel/database",
     "db:push": "npm run db:push -w @sds-sentinel/database",

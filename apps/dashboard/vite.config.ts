@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
+  // GitHub Pages hosts the site under a subpath like /Sentinel/. Vite injects
+  // this base into asset URLs; the SPA uses hash routing so no server rewrites
+  // are needed. Defaults to '/' for local dev / root hosting.
+  base: process.env.VITE_BASE_PATH || '/',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

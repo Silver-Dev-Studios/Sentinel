@@ -1,16 +1,22 @@
-# Deployment (Render)
+# Deployment
 
-Sentinel deploys to Render as four services (see `render.yaml`):
+Sentinel deploys to Render (the API) and GitHub Pages (the dashboard). The
+single-Render-web-service constraint is handled by a supervisor process that
+runs the API and the Discord bot inside one container.
 
-| Service | Type | Command | Purpose |
+Services:
+
+| Component | Host | Command | Purpose |
 | --- | --- | --- | --- |
-| `sentinel-postgres` | PostgreSQL | — | Persistent storage. |
-| `sentinel-api` | Web Service | `npm run start:api` | REST + WebSocket API. Health check `/api/health`. |
-| `sentinel-dashboard` | Static Site | `vite build` output from `apps/dashboard/dist` | Dashboard SPA. |
-| `sentinel-bot` | Background Worker | `npm run start:bot` | Discord Gateway listener. |
+| `sentinel-postgres` | Render (PostgreSQL) | — | Persistent storage. |
+| `sentinel-api` | Render (Web Service) | `npm run start:all` | REST + WebSocket API **and** Discord bot, supervised. Health check `/api/health`. |
+| Dashboard | GitHub Pages | `vite build` from `apps/dashboard/dist` | Dashboard SPA. |
 
-> **Important:** the bot must run as a background worker. Do not replace it with a web service or an
-> HTTP keep-alive workaround.
+`render.yaml` defines the Postgres database and the API web service
+(`startCommand: npm run start:all`). The supervisor (`scripts/start-all.mjs`)
+spawns the API (owner of the HTTP port; a crash exits the container so Render
+restarts the service) and the bot as a child process with restart-on-crash
+backoff. The bot is disabled automatically when `DISCORD_BOT_TOKEN` is unset.
 
 ## Preflight
 
@@ -22,11 +28,15 @@ Sentinel deploys to Render as four services (see `render.yaml`):
 
 ## Deploy steps
 
-1. Push the repository (Render Blueprint `render.yaml` is auto-detected).
-2. In each service, set the `sync: false` secrets:
-   - API: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`, `SENTINEL_API_KEY`.
-   - Bot: `DISCORD_BOT_TOKEN`, `SENTINEL_GUILD_ALLOWLIST`.
-3. Apply the schema. In a one-off shell connected to `sentinel-postgres`, or via a
+1. Push the repository. Render auto-detects Blueprint `render.yaml` and provisions
+   `sentinel-postgres` + `sentinel-api`.
+2. In the `sentinel-api` service, set the `sync: false` secrets:
+   `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`,
+   `SENTINEL_API_KEY`, `DISCORD_BOT_TOKEN`, `SENTINEL_GUILD_ALLOWLIST`.
+3. Set `DASHBOARD_URL` (the GitHub Pages URL, e.g.
+   `https://silver-dev-studios.github.io/Sentinel/`) and `CORS_ORIGINS` (a
+   comma-separated list including the GitHub Pages origin).
+4. Apply the schema. In a one-off shell connected to `sentinel-postgres`, or via a
    deploy-hook/prestart command:
    ```bash
    npm ci
@@ -34,7 +44,13 @@ Sentinel deploys to Render as four services (see `render.yaml`):
    npm run db:deploy -w @sds-sentinel/database   # applies prisma/migrations/20261115000000_init
    ```
    The repository ships Prisma migration files, so `db:deploy` works on an empty database.
-4. Verify `/api/health` on the API service and the login flow on the dashboard.
+5. Publish the dashboard to GitHub Pages from `apps/dashboard/dist`, built with:
+   ```bash
+   npm run build:packages && VITE_API_URL=https://<api-host> VITE_BASE_PATH=/Sentinel/ \
+     npm run build -w @sds-sentinel/dashboard
+   ```
+   The SPA uses hash routing, so no URL rewrites are needed on GitHub Pages.
+6. Verify `/api/health` on the API service and the login flow on the dashboard.
 
 ## Build ordering
 
@@ -42,26 +58,40 @@ Each Render service must build the workspace packages before the app that depend
 (workspace `types` point at `dist/index.d.ts`, which is gitignored). The blueprint uses:
 
 - API: `npm ci && npm run db:generate && npm run build:api`
-- Bot: `npm ci && npm run db:generate && npm run build:bot`
-- Dashboard: `npm ci && npm run build:packages && npm run build -w @sds-sentinel/dashboard`
 
-(`build:packages`, `build:api`, and `build:bot` are defined at the npm workspaces root.)
+(`build:api` builds all workspace packages first via `build:packages`.)
 
 ## Environment matrix
 
-| Variable | API | Bot | Dashboard |
+| Variable | API service | Required | Notes |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | required | required | — |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | required | — | — |
-| `DISCORD_BOT_TOKEN` | — | required | — |
-| `SENTINEL_GUILD_ALLOWLIST` | — | required | — |
-| `SESSION_SECRET` / `CSRF_SECRET` | required | — | — |
-| `SENTINEL_API_KEY` | required | required | — |
-| `SENTINEL_API_URL` | — | required | — |
-| `DASHBOARD_URL` / `CORS_ORIGINS` | required | — | — |
-| `REDIRECT_URI` | required | — | — |
-| `COOKIE_SECURE` / `CSRF_ENABLED` / `TRUST_PROXY` | required (true in prod) | — | — |
-| `VITE_API_URL` | — | — | build-time |
+| `DATABASE_URL` | yes | yes | From `sentinel-postgres`. |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | yes | yes | Discord OAuth2 app. |
+| `DISCORD_BOT_TOKEN` | yes | no (disables bot) | Where unset, the supervisor skips the bot. |
+| `SENTINEL_GUILD_ALLOWLIST` | yes | yes | Comma-separated SDS guild IDs. |
+| `SESSION_SECRET` / `CSRF_SECRET` | yes | yes | Strong random values. |
+| `SENTINEL_API_KEY` | yes | yes | Shared bot/API key. |
+| `SENTINEL_API_URL` | yes | no | Defaults to `http://localhost:$PORT` in the supervisor. |
+| `DASHBOARD_URL` | yes | yes | GitHub Pages URL for OAuth redirects. |
+| `CORS_ORIGINS` | yes | yes | Comma-separated allowed origins (GitHub Pages). |
+| `REDIRECT_URI` | yes | yes | `https://<api-host>/api/auth/callback`. |
+| `COOKIE_SECURE` / `COOKIE_SAMESITE` | yes | yes | `true` / `none` to allow cross-origin cookies from GitHub Pages. |
+| `CSRF_ENABLED` / `TRUST_PROXY` | yes | yes | `true` in production. |
+| Build-time | Dashboard | — | `VITE_API_URL` (Render API URL) and `VITE_BASE_PATH` (e.g. `/Sentinel/`). |
+
+## Cross-origin notes (GitHub Pages → Render API)
+
+The dashboard is served from GitHub Pages but calls the Render API, so:
+
+- The API must set `COOKIE_SAMESITE=none` with `COOKIE_SECURE=true` so the
+  session and CSRF cookies are sent cross-site.
+- `CORS_ORIGINS` must include the GitHub Pages origin.
+- The dashboard builds with `VITE_API_URL` pointing at the Render API. `wsUrl`
+  derives the live-activity WebSocket endpoint from that same origin.
+
+Note: WebSocket connections are currently not authenticated server-side (trust
+headers only). If the dashboard is publicly reachable, add token/session auth to
+the `/ws` handshake before enabling cross-origin live activity.
 
 ## Failure handling
 

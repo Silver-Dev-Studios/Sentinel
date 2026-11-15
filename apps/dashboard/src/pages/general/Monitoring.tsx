@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth';
 import { useServer } from '../../lib/server';
 import { Card, Empty, Loading, PageHeader, Pill } from '../../components/ui';
+import { wsUrl } from '../../lib/api';
 import type { ActivityEvent } from '../../lib/types';
+
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 export function MonitoringPage() {
   const { api } = useAuth();
@@ -26,8 +29,7 @@ export function MonitoringPage() {
   // Live WebSocket feed.
   useEffect(() => {
     if (!selectedGuildId) return;
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const socket = new WebSocket(`${proto}://${window.location.host}/ws`);
+    const socket = new WebSocket(wsUrl(API_BASE));
     wsRef.current = socket;
     socket.onopen = () => setWsStatus('open');
     socket.onclose = () => setWsStatus('closed');

@@ -110,13 +110,23 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Global auth guard: every /api/* route (except /api/auth/* and the public
   // health/diagnostics endpoints) requires a session.
   // Guild scoping and permission checks happen in each route handler.
-  const PUBLIC_PREFIXES = ['/api/auth', '/api/health', '/api/ws/status'];
+  // Auth prefixes that never 401 on their own: /api/auth/* resolve the session
+  // when present (so /api/auth/me and /api/auth/logout work) but stay reachable
+  // without one (login/callback). Health/ws-status are fully public.
+  const OPTIONAL_AUTH_PREFIXES = ['/api/auth'];
+  const PUBLIC_PREFIXES = ['/api/health', '/api/ws/status'];
   app.addHook('onRequest', async (request, reply) => {
     const url = request.url as string;
     const pathname = url.split('?')[0];
     if (!pathname.startsWith('/api')) return;
-    if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return;
+    const optional = OPTIONAL_AUTH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
     const { resolveAuth } = await import('./auth/sessions.js');
+    if (optional) {
+      const auth = await resolveAuth(prisma, request).catch(() => null);
+      if (auth) request.auth = auth;
+      return;
+    }
+    if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return;
     const auth = await resolveAuth(prisma, request);
     if (!auth) {
       reply.code(401).send({ error: 'Not authenticated', code: 'UNAUTHENTICATED' });

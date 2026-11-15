@@ -18,7 +18,7 @@ function Emblem({ size = 26 }: { size?: number }) {
 }
 
 function ServerSwitcher() {
-  const { servers, selectedGuildId, selectServer } = useServer();
+  const { servers, selectedGuildId, selectServer, error } = useServer();
   const [open, setOpen] = useState(false);
   const selected = servers.find((s) => s.id === selectedGuildId);
 
@@ -38,7 +38,7 @@ function ServerSwitcher() {
       {open ? (
         <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-sentinel-border bg-sentinel-surface shadow-xl">
           {servers.length === 0 ? (
-            <div className="p-3 text-xs text-sentinel-muted">No servers available</div>
+            <div className="p-3 text-xs text-sentinel-muted">{error ? 'Servers unavailable' : 'No servers available'}</div>
           ) : (
             servers.map((s) => (
               <button

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { useServer } from '../../lib/server';
-import { Card, Empty, Loading, PageHeader, Pill, StatCard } from '../../components/ui';
+import { Card, Empty, ErrorState, Loading, PageHeader, Pill, StatCard } from '../../components/ui';
 import type { HealthInfo } from '../../lib/types';
 
 export function OverviewPage() {
@@ -21,7 +21,7 @@ export function OverviewPage() {
   // Server list + per-server stats are already loaded once by ServerProvider
   // (/api/overview). This page consumes that data instead of re-fetching it,
   // so the landing page only needs the lightweight /api/health.
-  const { servers, loading: serversLoading, refresh: refreshServers } = useServer();
+  const { servers, loading: serversLoading, error: serversError, refresh: refreshServers } = useServer();
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [latencyMs, setLatencyMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +151,9 @@ export function OverviewPage() {
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-sentinel-muted">
         Connected Servers
       </h3>
-      {servers.length === 0 ? <Empty>No servers available to your account.</Empty> : (
+      {serversError ? (
+        <ErrorState title="Could not load servers" description={serversError} onRetry={refreshServers} />
+      ) : servers.length === 0 ? <Empty>No servers available to your account.</Empty> : (
         <div className="grid gap-4 md:grid-cols-2">
           {servers.map((server) => (
             <Card key={server.id}>

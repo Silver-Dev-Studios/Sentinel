@@ -48,9 +48,19 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly code?: string,
+    /** Seconds to wait before retrying, when the API asks us to back off. */
+    public readonly retryAfter?: number,
   ) {
     super(message);
   }
+}
+
+/** The API sends `retryAfter` as a human string such as "46 seconds". */
+function parseRetryAfter(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw !== 'string') return undefined;
+  const match = /(\d+(?:\.\d+)?)/.exec(raw);
+  return match ? Number.parseFloat(match[1]) : undefined;
 }
 
 export interface ApiConfig {
@@ -80,14 +90,19 @@ export async function request<T>(path: string, config: ApiConfig, init?: Request
   });
 
   if (!res.ok) {
-    let body: { error?: string; code?: string } = {};
+    let body: { error?: string; code?: string; retryAfter?: unknown } = {};
     try {
-      body = (await res.json()) as { error?: string; code?: string };
+      body = (await res.json()) as { error?: string; code?: string; retryAfter?: unknown };
     } catch {
       // non-JSON error body
     }
     if (res.status === 401 && config.onUnauthorized) config.onUnauthorized();
-    throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status, body.code);
+    throw new ApiError(
+      body.error ?? `Request failed (${res.status})`,
+      res.status,
+      body.code,
+      parseRetryAfter(body.retryAfter) ?? parseRetryAfter(res.headers.get('retry-after')),
+    );
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

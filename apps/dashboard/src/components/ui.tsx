@@ -99,6 +99,32 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="rounded-lg border border-dashed border-sentinel-border p-6 text-center text-sm text-sentinel-muted">{children}</div>;
 }
 
+export function ErrorState({
+  title,
+  description,
+  retrying = false,
+  onRetry,
+}: {
+  title: string;
+  description: string;
+  retrying?: boolean;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-sentinel-border p-8 text-center">
+      <div className="text-sm font-semibold text-sentinel-text">{title}</div>
+      <p className="mx-auto mt-2 max-w-md text-sm text-sentinel-muted">{description}</p>
+      {onRetry ? (
+        <div className="mt-4">
+          <Button onClick={onRetry} disabled={retrying}>
+            {retrying ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Button({
   children,
   onClick,

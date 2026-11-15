@@ -78,6 +78,14 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
   OAuth callback redirects to `/#/login?error=not_allowed` without creating a session. Empty means
   anyone can log in (dev only); the API logs a startup warning then. Owner ID used in production:
   `1360925264669966338`.
+- **Guild access / owner lockout**: the guild owner is ALWAYS allowed, even with no
+  `server_members` row and not in `authorized_servers.memberIds` (both are cached and can be stale
+  right after a bot start). `verifyGuildAccess`, `/api/auth/me`, `/api/overview` and `/ws` all treat
+  `ownerId === user.discordId` as access. For non-owners, membership is read from the
+  `server_members` table (authoritative) with `memberIds` as a fallback. If a user validly logs in
+  but sees "You do not have access to this server", the cause is almost always that the user is the
+  server owner but the **production** `authorized_servers.ownerId` doesn't match their Discord ID
+  (e.g. old/test data), or they genuinely aren't a member of the allowlisted guild the bot monitors.
 - **Health contract**: `/api/health` returns a superset shape — `{ status, uptime, apiLatencyMs,
   api, database:{ok,connected,latencyMs}, bot:{connected}, websocket:{connectedClients,botConnected} }`.
   The Overview strip and Diagnostics page read these real fields; do not render health sub-objects the

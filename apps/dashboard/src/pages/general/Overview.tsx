@@ -18,14 +18,17 @@ export function OverviewPage() {
   const { api } = useAuth();
   const [data, setData] = useState<OverviewData | null>(null);
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
+      const t0 = performance.now();
       const [overview, h] = await Promise.all([
         api.get<OverviewData>('/api/overview'),
         api.get<HealthInfo>('/api/health'),
       ]);
+      setLatencyMs(Math.round(performance.now() - t0));
       setData(overview);
       setHealth(h);
       setError(null);
@@ -55,7 +58,7 @@ export function OverviewPage() {
       <PageHeader
         title="Overview"
         description="Global Sentinel status across all connected SDS servers."
-        actions={<Pill tone={health.status === 'ok' ? 'success' : 'warn'}>{health.status}</Pill>}
+        actions={<Pill tone={health.status === 'operational' ? 'success' : 'warn'}>{health.status}</Pill>}
       />
 
       {/* Global connection status */}
@@ -93,7 +96,9 @@ export function OverviewPage() {
           <div className="min-w-0">
             <div className="text-xs text-sentinel-muted">Bot Gateway</div>
             <div className="text-sm font-semibold">
-              {health.websocket.botConnected ? 'Connected' : 'Disconnected'}
+              <span className={health.websocket.botConnected ? 'text-emerald-400' : 'text-rose-400'}>
+                {health.websocket.botConnected ? 'Connected' : 'Disconnected'}
+              </span>
             </div>
           </div>
         </Card>
@@ -101,7 +106,7 @@ export function OverviewPage() {
           <Activity className="h-5 w-5 text-sentinel-accent2" />
           <div className="min-w-0">
             <div className="text-xs text-sentinel-muted">API Latency</div>
-            <div className="text-sm font-semibold">{health.apiLatencyMs} ms</div>
+            <div className="text-sm font-semibold">{latencyMs} ms</div>
           </div>
         </Card>
         <Card className="flex items-center gap-3">

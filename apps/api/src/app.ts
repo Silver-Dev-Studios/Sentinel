@@ -45,6 +45,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('wsHub', wsHub);
   app.decorate('botNotifier', botNotifier);
 
+  if (config.allowedDiscordUserIds.length === 0) {
+    app.log.warn(
+      'ALLOWED_DISCORD_USER_IDS is empty: any Discord account can access Sentinel. Set it in production.',
+    );
+  } else {
+    app.log.info({ count: config.allowedDiscordUserIds.length }, 'Access allowlist active');
+  }
+
   await app.register(cookie);
   await app.register(cors, {
     origin: (origin, cb) => {

@@ -73,3 +73,18 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
 - Local end-to-end auth check (no secrets printed): create a user+session in the local Postgres,
   build the API, then `app.inject({ url:'/api/auth/me', headers:{ authorization:`Bearer ${token}` } })`
   and expect 200; without the token expect 401. See git history `931e087`.
+- **Access allowlist**: set `ALLOWED_DISCORD_USER_IDS` (comma-separated Discord user IDs) on Render.
+  When non-empty, `resolveAuth` returns null for any other account → every API route 401s, and the
+  OAuth callback redirects to `/#/login?error=not_allowed` without creating a session. Empty means
+  anyone can log in (dev only); the API logs a startup warning then. Owner ID used in production:
+  `1360925264669966338`.
+- **Health contract**: `/api/health` returns a superset shape — `{ status, uptime, apiLatencyMs,
+  api, database:{ok,connected,latencyMs}, bot:{connected}, websocket:{connectedClients,botConnected} }`.
+  The Overview strip and Diagnostics page read these real fields; do not render health sub-objects the
+  endpoint doesn't return or they'll show "Disconnected/down/ms". DB probe is cached ~3s (`healthCache`
+  in `routes/system.ts`). Note: `status` is `operational`/`degraded` (not `ok`).
+- **WebSocket auth**: `/ws` dashboard clients must present `?token=<session-token>`; the server derives
+  the user's guild set from the session + `authorized_servers` rows (never trusts headers). The internal
+  bot uses `x-sentinel-key`. Unauthorized handshakes close with 4401.
+- **Dashboard loading**: routes are code-split via `lazy()` (named exports → `.then(m => ({default:
+  m.XPage}))`). Initial bundle is the shell + Login/Overview; other pages load on navigation.

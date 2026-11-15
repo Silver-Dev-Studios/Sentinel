@@ -35,6 +35,12 @@ export interface ApiConfig {
   csrfEnabled: boolean;
   csrfSecret: string;
   apiKey: string;
+  /**
+   * Discord user IDs permitted to use Sentinel. When non-empty, every other
+   * account is denied at both login and request time. Empty means "allow all"
+   * (development convenience); production must always set this.
+   */
+  allowedDiscordUserIds: string[];
   trustProxy: boolean;
   corsOrigins: string[];
   rateLimitMax: number;
@@ -82,6 +88,10 @@ export function loadConfig(): ApiConfig {
     csrfEnabled: bool('CSRF_ENABLED', true),
     csrfSecret: process.env.CSRF_SECRET ?? process.env.SESSION_SECRET ?? required('CSRF_SECRET'),
     apiKey: process.env.SENTINEL_API_KEY ?? required('SENTINEL_API_KEY'),
+    allowedDiscordUserIds: (process.env.ALLOWED_DISCORD_USER_IDS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     trustProxy: bool('TRUST_PROXY', isProduction),
     corsOrigins: resolveCorsOrigins(),
     rateLimitMax: num('RATE_LIMIT_MAX', 120),

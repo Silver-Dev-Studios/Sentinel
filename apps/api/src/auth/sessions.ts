@@ -42,6 +42,11 @@ function extractToken(req: FastifyRequest): string | null {
   return req.cookies[SESSION_COOKIE] ?? null;
 }
 
+function allowedDiscordUserIds(req: FastifyRequest): string[] {
+  const cfg = (req.server as unknown as { config?: { allowedDiscordUserIds?: string[] } }).config;
+  return cfg?.allowedDiscordUserIds ?? [];
+}
+
 export async function resolveAuth(
   prisma: PrismaClient,
   req: FastifyRequest,
@@ -56,6 +61,12 @@ export async function resolveAuth(
   if (!session) return null;
   if (session.expiresAt.getTime() < Date.now()) {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
+    return null;
+  }
+  // Access allowlist: a valid session for a non-allowlisted Discord account is
+  // treated as unauthenticated everywhere (API routes, /api/auth/me, WS).
+  const allowed = allowedDiscordUserIds(req);
+  if (allowed.length > 0 && !allowed.includes(session.user.discordId)) {
     return null;
   }
   return { user: session.user, session };

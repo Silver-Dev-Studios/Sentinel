@@ -79,5 +79,10 @@ services:
         sync: false
         # Comma-separated GitHub Pages origin(s), e.g.
         # https://silver-dev-studios.github.io,https://silver-dev-studios.github.io/Sentinel
+      - key: ALLOWED_DISCORD_USER_IDS
+        sync: false
+        # Comma-separated Discord user IDs permitted to use Sentinel. Empty
+        # means any Discord account can log in — always set this in production.
+        # Default in live deployment: 1360925264669966338.
       - key: SENTINEL_LOG_LEVEL
         value: info

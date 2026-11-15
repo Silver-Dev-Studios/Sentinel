@@ -1,27 +1,48 @@
 import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
+import { checkDatabaseHealth } from '@sds-sentinel/database';
 import { guildGuard, ensurePerm } from '../middleware/guards.js';
 import { writeAudit, queryAudit } from '../services/audit.js';
+
+/**
+ * Cache the database probe briefly. The Overview strip and Diagnostics page poll
+ * health independently; a 3s cache keeps both fresh while avoiding a DB round
+ * trip on every poll.
+ */
+let healthCache: { at: number; value: Awaited<ReturnType<typeof checkDatabaseHealth>> } | null = null;
+async function cachedDatabaseHealth(): Promise<Awaited<ReturnType<typeof checkDatabaseHealth>>> {
+  const now = Date.now();
+  if (healthCache && now - healthCache.at < 3000) return healthCache.value;
+  const value = await checkDatabaseHealth().catch(() => ({ ok: false, latencyMs: 0 }));
+  healthCache = { at: now, value };
+  return value;
+}
 
 export async function registerSystemRoutes(app: FastifyInstance): Promise<void> {
   const prisma = app.prisma;
 
   // Public health probe used by Render and the diagnostics page.
+  // Returns a superset shape so every dashboard widget (Overview strip and
+  // Diagnostics page) reads real values instead of undefined.
   app.get('/api/health', async (_req, reply) => {
-    let db = { ok: false };
-    try {
-      const { checkDatabaseHealth } = await import('@sds-sentinel/database');
-      db = await checkDatabaseHealth();
-    } catch (err) {
-      db = { ok: false };
-    }
+    const started = Date.now();
+    const db = await cachedDatabaseHealth();
     const ok = db.ok;
+    const uptime = Math.round(process.uptime());
+    const apiLatencyMs = Date.now() - started;
     return reply.code(ok ? 200 : 503).send({
       status: ok ? 'operational' : 'degraded',
-      api: { ok: true, uptimeSeconds: Math.round(process.uptime()) },
-      database: db,
+      uptime,
+      apiLatencyMs,
+      api: { ok: true, latencyMs: apiLatencyMs, uptimeSeconds: uptime },
+      database: {
+        ok,
+        connected: ok,
+        latencyMs: db.latencyMs,
+        ...(db.detail ? { detail: db.detail } : {}),
+      },
       bot: { connected: app.wsHub.botConnected },
-      websocket: { connectedClients: app.wsHub.connectedClients },
+      websocket: { connectedClients: app.wsHub.connectedClients, botConnected: app.wsHub.botConnected },
       time: new Date().toISOString(),
     });
   });
@@ -102,6 +123,8 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/servers/:guildId/diagnostics', { preHandler: [guildGuard.bind(app)] }, async (req, reply) => {
     const guildId = (req.params as { guildId: string }).guildId;
+    const started = Date.now();
+    const db = await cachedDatabaseHealth();
     const recentErrors = await prisma.diagnosticLog.findMany({
       where: { kind: { in: ['error', 'warning', 'api_failure', 'bot_disconnect', 'db_failure'] } },
       orderBy: { createdAt: 'desc' },
@@ -110,11 +133,12 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
     const failedOperations = await prisma.botCommand.count({
       where: { guildId, status: { in: ['failed', 'rejected'] } },
     });
+    const apiLatencyMs = Date.now() - started;
     return {
       guildId,
       generatedAt: new Date().toISOString(),
-      api: { status: 'operational', latencyMs: 0 },
-      database: { status: 'operational' },
+      api: { status: 'operational', latencyMs: apiLatencyMs },
+      database: { status: db.ok ? 'operational' : 'down', latencyMs: db.latencyMs },
       websocket: { connectedClients: app.wsHub.connectedClients, botConnected: app.wsHub.botConnected },
       bot: { connected: app.wsHub.botConnected },
       backgroundTasks: { status: app.wsHub.botConnected ? 'running' : 'unknown' },

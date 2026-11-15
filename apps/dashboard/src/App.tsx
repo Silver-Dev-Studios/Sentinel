@@ -1,35 +1,50 @@
+import { lazy, Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { ServerProvider } from './lib/server';
 import { Layout } from './components/Layout';
-import { Shield, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { LoginPage } from './pages/Login';
-import { OverviewPage } from './pages/general/Overview';
-import { ServerSelectorPage } from './pages/general/ServerSelector';
-import { MonitoringPage } from './pages/general/Monitoring';
-import { AnalyticsPage } from './pages/general/Analytics';
-import { ModerationPage } from './pages/moderation/Moderation';
-import { QuickActionsPage } from './pages/moderation/QuickActions';
-import { ModerationRolesPage } from './pages/moderation/ModerationRoles';
-import { AutoModPage } from './pages/moderation/AutoMod';
-import { ModerationLogsPage } from './pages/moderation/ModerationLogs';
-import { MessageBuilderPage } from './pages/management/MessageBuilder';
-import { EventBuilderPage } from './pages/management/EventBuilder';
-import { TicketSystemPage } from './pages/management/TicketSystem';
-import { GiveawaysPage } from './pages/management/Giveaways';
-import { CustomCommandsPage } from './pages/management/CustomCommands';
-import { SchedulerPage } from './pages/management/Scheduler';
-import { SecurityOverviewPage } from './pages/security/SecurityOverview';
-import { AutoRaidPage } from './pages/security/AutoRaid';
-import { AutoNukePage } from './pages/security/AutoNuke';
-import { AutoSpamPage } from './pages/security/AutoSpam';
-import { PermissionSecurityPage } from './pages/security/PermissionSecurity';
-import { BackupsPage } from './pages/security/Backups';
-import { AlertCenterPage } from './pages/system/AlertCenter';
-import { AuditCenterPage } from './pages/system/AuditCenter';
-import { DiagnosticsPage } from './pages/system/Diagnostics';
-import { SettingsPage } from './pages/system/Settings';
-import { NotFoundPage } from './pages/NotFound';
+
+/**
+ * Most pages are code-split so the initial bundle only contains the app shell
+ * (layout, auth, Login) plus the Overview page; the rest load on navigation.
+ * This cuts the initial JS the browser downloads for GitHub Pages hosting.
+ */
+const OverviewPage = lazy(() => import('./pages/general/Overview').then((m) => ({ default: m.OverviewPage })));
+const ServerSelectorPage = lazy(() => import('./pages/general/ServerSelector').then((m) => ({ default: m.ServerSelectorPage })));
+const MonitoringPage = lazy(() => import('./pages/general/Monitoring').then((m) => ({ default: m.MonitoringPage })));
+const AnalyticsPage = lazy(() => import('./pages/general/Analytics').then((m) => ({ default: m.AnalyticsPage })));
+const ModerationPage = lazy(() => import('./pages/moderation/Moderation').then((m) => ({ default: m.ModerationPage })));
+const QuickActionsPage = lazy(() => import('./pages/moderation/QuickActions').then((m) => ({ default: m.QuickActionsPage })));
+const ModerationRolesPage = lazy(() => import('./pages/moderation/ModerationRoles').then((m) => ({ default: m.ModerationRolesPage })));
+const AutoModPage = lazy(() => import('./pages/moderation/AutoMod').then((m) => ({ default: m.AutoModPage })));
+const ModerationLogsPage = lazy(() => import('./pages/moderation/ModerationLogs').then((m) => ({ default: m.ModerationLogsPage })));
+const MessageBuilderPage = lazy(() => import('./pages/management/MessageBuilder').then((m) => ({ default: m.MessageBuilderPage })));
+const EventBuilderPage = lazy(() => import('./pages/management/EventBuilder').then((m) => ({ default: m.EventBuilderPage })));
+const TicketSystemPage = lazy(() => import('./pages/management/TicketSystem').then((m) => ({ default: m.TicketSystemPage })));
+const GiveawaysPage = lazy(() => import('./pages/management/Giveaways').then((m) => ({ default: m.GiveawaysPage })));
+const CustomCommandsPage = lazy(() => import('./pages/management/CustomCommands').then((m) => ({ default: m.CustomCommandsPage })));
+const SchedulerPage = lazy(() => import('./pages/management/Scheduler').then((m) => ({ default: m.SchedulerPage })));
+const SecurityOverviewPage = lazy(() => import('./pages/security/SecurityOverview').then((m) => ({ default: m.SecurityOverviewPage })));
+const AutoRaidPage = lazy(() => import('./pages/security/AutoRaid').then((m) => ({ default: m.AutoRaidPage })));
+const AutoNukePage = lazy(() => import('./pages/security/AutoNuke').then((m) => ({ default: m.AutoNukePage })));
+const AutoSpamPage = lazy(() => import('./pages/security/AutoSpam').then((m) => ({ default: m.AutoSpamPage })));
+const PermissionSecurityPage = lazy(() => import('./pages/security/PermissionSecurity').then((m) => ({ default: m.PermissionSecurityPage })));
+const BackupsPage = lazy(() => import('./pages/security/Backups').then((m) => ({ default: m.BackupsPage })));
+const AlertCenterPage = lazy(() => import('./pages/system/AlertCenter').then((m) => ({ default: m.AlertCenterPage })));
+const AuditCenterPage = lazy(() => import('./pages/system/AuditCenter').then((m) => ({ default: m.AuditCenterPage })));
+const DiagnosticsPage = lazy(() => import('./pages/system/Diagnostics').then((m) => ({ default: m.DiagnosticsPage })));
+const SettingsPage = lazy(() => import('./pages/system/Settings').then((m) => ({ default: m.SettingsPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFoundPage })));
+
+function PageLoader() {
+  return (
+    <div className="flex h-full min-h-[50vh] items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-sentinel-accent2" />
+    </div>
+  );
+}
 
 function LoginGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -41,7 +56,7 @@ function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <LoginPage />;
-  return <>{children}</>;
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
 }
 
 function AppRoutes() {
@@ -94,5 +109,3 @@ export default function App() {
     </HashRouter>
   );
 }
-
-export { Shield };

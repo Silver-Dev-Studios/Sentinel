@@ -4,6 +4,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_oauth_state: 'Your sign-in session expired. Please try again.',
   oauth_failed: 'Discord did not complete the sign-in. Please try again.',
   user_fetch_failed: 'Could not load your Discord profile. Please try again.',
+  not_allowed: 'This Discord account is not authorized to use Sentinel. Access is restricted to approved SDS administrators.',
 };
 
 export function LoginPage() {

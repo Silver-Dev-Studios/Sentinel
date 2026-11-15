@@ -209,6 +209,8 @@ export interface HealthInfo {
   status: string;
   uptime: number;
   apiLatencyMs: number;
-  database: { connected: boolean; latencyMs: number };
+  api: { ok: boolean; latencyMs: number; uptimeSeconds: number };
+  database: { ok: boolean; connected: boolean; latencyMs: number; detail?: string };
+  bot: { connected: boolean };
   websocket: { connectedClients: number; botConnected: boolean };
 }

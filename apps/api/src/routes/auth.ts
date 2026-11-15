@@ -63,6 +63,22 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.redirect(`${app.config.dashboardUrl}/#/login?error=user_fetch_failed`);
     }
 
+    // Access allowlist: refuse to create a session for any Discord account that
+    // is not explicitly permitted. This is the primary gate; resolveAuth also
+    // re-checks on every request as defence in depth.
+    const allowed = app.config.allowedDiscordUserIds;
+    if (allowed.length > 0 && !allowed.includes(discordUser.id)) {
+      app.log.warn({ discordId: discordUser.id }, 'OAuth login denied by allowlist');
+      await writeAudit(prisma, app.wsHub, {
+        action: 'auth.denied',
+        category: 'auth',
+        actorId: discordUser.id,
+        resource: 'access_allowlist',
+        ipHash: hashIp(req),
+      }).catch(() => undefined);
+      return reply.redirect(`${app.config.dashboardUrl}/#/login?error=not_allowed`);
+    }
+
     const user = await prisma.user.upsert({
       where: { discordId: discordUser.id },
       create: {

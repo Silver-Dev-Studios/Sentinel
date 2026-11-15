@@ -117,5 +117,10 @@ export function wsUrl(baseUrl: string, guildId?: string): string {
   const host = baseUrl
     ? new URL(baseUrl).host
     : window.location.host;
-  return `${proto}://${host}/ws?guild=${guildId ?? ''}`;
+  const token = getToken();
+  const params = new URLSearchParams();
+  if (guildId) params.set('guild', guildId);
+  if (token) params.set('token', token);
+  const qs = params.toString();
+  return `${proto}://${host}/ws${qs ? `?${qs}` : ''}`;
 }

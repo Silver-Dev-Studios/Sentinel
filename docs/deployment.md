@@ -57,9 +57,11 @@ backoff. The bot is disabled automatically when `DISCORD_BOT_TOKEN` is unset.
 Each Render service must build the workspace packages before the app that depends on them
 (workspace `types` point at `dist/index.d.ts`, which is gitignored). The blueprint uses:
 
-- API: `npm ci && npm run db:generate && npm run build:api`
+- API + Bot: `npm ci && npm run db:generate && npm run build:api && npm run build:bot`
 
-(`build:api` builds all workspace packages first via `build:packages`.)
+(`build:api` and `build:bot` each build the workspace packages first via
+`build:packages`; building both is required because the supervisor starts the
+compiled bot at `apps/bot/dist/index.js`.)
 
 ## Environment matrix
 

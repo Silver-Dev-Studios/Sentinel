@@ -26,13 +26,26 @@ Sentinel deploys to Render as four services (see `render.yaml`):
 2. In each service, set the `sync: false` secrets:
    - API: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`, `SENTINEL_API_KEY`.
    - Bot: `DISCORD_BOT_TOKEN`, `SENTINEL_GUILD_ALLOWLIST`.
-3. Apply the schema. In a one-off shell connected to `sentinel-postgres`:
+3. Apply the schema. In a one-off shell connected to `sentinel-postgres`, or via a
+   deploy-hook/prestart command:
    ```bash
    npm ci
    npm run db:generate -w @sds-sentinel/database
-   npm run db:deploy -w @sds-sentinel/database
+   npm run db:deploy -w @sds-sentinel/database   # applies prisma/migrations/20261115000000_init
    ```
+   The repository ships Prisma migration files, so `db:deploy` works on an empty database.
 4. Verify `/api/health` on the API service and the login flow on the dashboard.
+
+## Build ordering
+
+Each Render service must build the workspace packages before the app that depends on them
+(workspace `types` point at `dist/index.d.ts`, which is gitignored). The blueprint uses:
+
+- API: `npm ci && npm run db:generate && npm run build:api`
+- Bot: `npm ci && npm run db:generate && npm run build:bot`
+- Dashboard: `npm ci && npm run build:packages && npm run build -w @sds-sentinel/dashboard`
+
+(`build:packages`, `build:api`, and `build:bot` are defined at the npm workspaces root.)
 
 ## Environment matrix
 

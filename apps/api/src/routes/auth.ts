@@ -35,7 +35,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const { code, state } = req.query as { code?: string; state?: string };
     const storedState = req.cookies['sentinel_oauth_state'];
     if (!code || !state || state !== storedState) {
-      return reply.redirect(`${app.config.dashboardUrl}/login?error=invalid_oauth_state`);
+      return reply.redirect(`${app.config.dashboardUrl}/#/login?error=invalid_oauth_state`);
     }
 
     let token;
@@ -47,12 +47,12 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       app.log.error({ err }, 'OAuth token exchange failed');
-      return reply.redirect(`${app.config.dashboardUrl}/login?error=oauth_failed`);
+      return reply.redirect(`${app.config.dashboardUrl}/#/login?error=oauth_failed`);
     }
 
     const discordUser = await fetchOAuthUser(token.access_token).catch(() => null);
     if (!discordUser) {
-      return reply.redirect(`${app.config.dashboardUrl}/login?error=user_fetch_failed`);
+      return reply.redirect(`${app.config.dashboardUrl}/#/login?error=user_fetch_failed`);
     }
 
     const user = await prisma.user.upsert({
@@ -92,7 +92,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       ipHash: hashIp(req),
     });
 
-    return reply.redirect(`${app.config.dashboardUrl}/overview`);
+    return reply.redirect(`${app.config.dashboardUrl}/#/overview`);
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

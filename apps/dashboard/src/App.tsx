@@ -51,6 +51,7 @@ function AppRoutes() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/overview" element={<OverviewPage />} />
             <Route path="/servers" element={<ServerSelectorPage />} />
             <Route path="/monitoring" element={<MonitoringPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />

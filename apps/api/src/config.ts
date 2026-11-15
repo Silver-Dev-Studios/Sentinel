@@ -60,7 +60,7 @@ export function loadConfig(): ApiConfig {
   return {
     port: num('PORT', 12000),
     apiUrl: process.env.API_URL ?? `http://localhost:${num('PORT', 12000)}`,
-    dashboardUrl: process.env.DASHBOARD_URL ?? 'http://localhost:5173',
+    dashboardUrl: (process.env.DASHBOARD_URL ?? 'http://localhost:5173').replace(/\/+$/, ''),
     databaseUrl: process.env.DATABASE_URL ?? required('DATABASE_URL'),
     redirectUri: process.env.REDIRECT_URI ?? `${process.env.API_URL ?? `http://localhost:${num('PORT', 12000)}`}/api/auth/callback`,
     clientId: process.env.DISCORD_CLIENT_ID ?? required('DISCORD_CLIENT_ID'),

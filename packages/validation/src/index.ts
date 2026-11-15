@@ -174,7 +174,10 @@ export const embedSchema = z.object({
 
 export const messageSendSchema = z
   .object({
-    guildId: guildIdSchema,
+    // guildId is derived from the request path; the dashboard never sends it.
+    // It is kept optional so a cross-guild check (body.guildId vs :guildId)
+    // still works when a client does include it.
+    guildId: guildIdSchema.optional(),
     channelIds: z.array(snowflake).min(1, 'At least one channel is required'),
     content: z.string().trim().max(2000).optional(),
     embeds: z.array(embedSchema).max(10).optional(),

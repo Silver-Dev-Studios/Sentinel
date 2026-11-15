@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
+import { ZodError } from 'zod';
 import { getPrisma, checkDatabaseHealth } from '@sds-sentinel/database';
 import type { AuthError } from './middleware/auth.js';
 import { loadConfig, type ApiConfig } from './config.js';
@@ -166,6 +167,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
     if (ferr.name === 'CorsError') {
       return reply.code(403).send({ error: 'Origin not allowed', code: 'CORS' });
+    }
+    // Route handlers call zod schemas directly with .parse(); surface those as
+    // 400s so a bad payload never falls through to a generic 500.
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        error: 'Validation failed',
+        code: 'VALIDATION',
+        details: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
     }
     request.log.error({ err: error }, 'Unhandled error');
     const statusCode = ferr.statusCode && ferr.statusCode < 500 ? ferr.statusCode : 500;

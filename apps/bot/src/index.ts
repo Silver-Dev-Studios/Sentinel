@@ -14,6 +14,7 @@ import { BotMessageService } from './message-service.js';
 import { BotScheduler } from './scheduler.js';
 import { connectBotSocket } from './ws.js';
 import { syncAllChannels, syncGuildChannels } from './channel-sync.js';
+import { syncAuthorizedServers } from './guild-sync.js';
 
 async function main(): Promise<void> {
   const config = loadBotConfig();
@@ -60,6 +61,12 @@ async function main(): Promise<void> {
 
     // Mirror channel structure so the dashboard offers real channel pickers.
     await syncAllChannels(prisma, client, config.guildAllowlist);
+
+    // Seed authorized servers + members so the dashboard server list is
+    // populated immediately rather than only after future join events.
+    await syncAuthorizedServers(prisma, client, config.guildAllowlist).catch((err) =>
+      console.log('[sentinel-bot] authorized-server sync failed:', err),
+    );
 
     ready.user.setActivity('SDS servers', { type: ActivityType.Watching });
   });

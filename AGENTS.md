@@ -38,6 +38,10 @@ Dev Studios. Monorepo via npm workspaces (`apps/*`, `packages/*`).
 - Command notation: `+` prefix, `–` slash, `+/–` both.
 - After changing `packages/database/prisma/schema.prisma`, run `npm run db:generate` then
   `npm run db:push` (dev) and rebuild affected workspaces.
+- Production migrations run through `scripts/apply-migrations.mjs` (pooler-safe). It auto-baselines
+  databases that predate migration tracking: DDL that fails with "already exists" (42P07/42710/
+  42701/42P06) is skipped, and migrations whose objects all exist are recorded as applied so later
+  migrations that actually add columns (e.g. `20261115224042_sync_schema_to_client`) still run.
 - `apps/bot/src/channel-sync.ts` mirrors allowlisted guild channels into `ServerChannel`
   (`server_channels`) so the dashboard Message Builder lists real channels.
 - New dashboard pages: React component under `apps/dashboard/src/pages/{general,moderation,

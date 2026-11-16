@@ -48,12 +48,13 @@ const runApi = makeSpawner('apps/api', 'dist/server.js');
 /**
  * Apply pending Prisma migrations without blocking API/bot startup.
  *
- * Prisma Migrate issues DDL, which is unreliable through a pooled (PgBouncer)
- * connection such as Supabase's transaction pooler. When a `DIRECT_URL` is
- * configured, migrations run against it; otherwise they fall back to
- * `DATABASE_URL`. The run is time-boxed so a hung/blocked database can never
+ * Prisma Migrate issues DDL over named prepared statements, which the
+ * Supabase transaction pooler (PgBouncer) rejects. When `DIRECT_URL` is set
+ * migrations run through real `prisma migrate deploy`; otherwise a
+ * pooler-safe applier executes the same `migration.sql` files through the
+ * Prisma Client. The run is time-boxed so a hung/blocked database can never
  * keep the HTTP listener from coming up (Render kills deploys that never open
- * a port). If the migration is still pending, the API starts anyway and its
+ * a port). If a migration is still pending, the API starts anyway and its
  * degraded/zero-defaults handling covers the missing columns.
  */
 const MIGRATE_RETRIES = 3;
@@ -61,9 +62,22 @@ const MIGRATE_TIMEOUT_MS = 45_000;
 
 function runPrismaMigrate() {
   return new Promise((resolve) => {
-    const child = spawn('npx', ['prisma', 'migrate', 'deploy'], {
-      cwd: join(root, 'packages/database'),
-      env: { ...process.env, ...(process.env.DIRECT_URL ? { DATABASE_URL: process.env.DIRECT_URL } : {}) },
+    // With a DIRECT_URL (Supabase direct / session-pooler connection) the real
+    // Prisma Migrate engine works. Without it, the transaction pooler would
+    // break the engine with `prepared statement "s0" does not exist`, so we
+    // fall back to the pooler-safe applier in scripts/apply-migrations.mjs.
+    const useDirect = Boolean(process.env.DIRECT_URL);
+    const command = useDirect ? 'npx' : process.execPath;
+    const args = useDirect
+      ? ['prisma', 'migrate', 'deploy']
+      : ['scripts/apply-migrations.mjs'];
+    const env = useDirect
+      ? { ...process.env, DATABASE_URL: process.env.DIRECT_URL }
+      : process.env;
+    const cwd = useDirect ? join(root, 'packages/database') : root;
+    const child = spawn(command, args, {
+      cwd,
+      env,
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     const timer = setTimeout(() => {
